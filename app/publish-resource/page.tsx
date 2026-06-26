@@ -36,7 +36,7 @@ export default function PublishResourcePage() {
       category: "",
       tags: "",
       license: "Commercial Use Allowed",
-      resourceType: "Custom Service",
+      resourceType: "Software Development",
       agentConsumable: true,
       previewText: "",
       lockedContent: "",

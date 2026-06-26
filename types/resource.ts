@@ -27,6 +27,11 @@ export type LicenseType =
   | "Custom License";
 
 export type ResourceType =
+  | "Quality Assurance"
+  | "Software Development"
+  | "Design"
+  | "Course"
+  | "Subscription"
   | "Dataset"
   | "Prompt"
   | "Technical Guide"
@@ -103,6 +108,11 @@ export const licenseValues: LicenseType[] = [
 ];
 
 export const resourceTypeValues: ResourceType[] = [
+  "Quality Assurance",
+  "Software Development",
+  "Design",
+  "Course",
+  "Subscription",
   "Dataset",
   "Prompt",
   "Technical Guide",

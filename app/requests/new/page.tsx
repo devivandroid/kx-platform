@@ -31,7 +31,7 @@ export default function NewRequestPage() {
       category: "",
       tags: "",
       license: "Commercial Use Allowed",
-      resourceType: "Custom Service",
+      resourceType: "Software Development",
       agentConsumable: true,
       previewText: "",
       lockedContent: "",

@@ -12,7 +12,7 @@ const footerLinks = [
     href: "https://github.com/devivandroid/arc-knowledge-exchange",
     external: true
   },
-  { label: "X", href: "https://x.com", external: true }
+  { label: "X", href: "https://x.com/KnowledgeOnArc", external: true }
 ];
 
 export function Footer() {
