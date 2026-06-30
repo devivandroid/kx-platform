@@ -2,7 +2,7 @@
 
 KX uses Supabase as the public demo persistence layer:
 
-- Supabase Postgres stores resources, requests, purchase receipts, ratings, risk events, participants, file metadata and Arc Network snapshots.
+- Supabase Postgres stores resources, requests, purchase receipts, ratings, risk events, participants, file metadata, Arc Network snapshots, Human / Agent identity estimations and the latest per-wallet transaction sample used by the estimator.
 - Supabase Storage stores private downloadable resource files.
 - The application still verifies payments and streams downloads through KX API routes.
 
@@ -12,6 +12,9 @@ Run the SQL files in `supabase/migrations/` against the Supabase project:
 
 1. `0001_initial_schema.sql`
 2. `0002_private_resource_storage.sql`
+3. `0003_participant_user_entity_model.sql`
+4. `0004_wallet_identity_estimations.sql`
+5. `0005_arc_native_compatibility.sql`
 
 The second migration creates a private Storage bucket named `kx-resource-files`.
 

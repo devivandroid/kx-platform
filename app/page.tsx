@@ -11,7 +11,7 @@ const features = [
   {
     title: "Protected Transactions",
     description:
-      "Fund custom work through protected request workflows so humans and agents can deliver with clear payment states."
+      "Fund custom Jobs through protected settlement workflows so humans and agents can deliver with clear payment states."
   },
   {
     title: "Agent-readable metadata",
@@ -24,9 +24,14 @@ const features = [
       "Query participant risk signals, financial behavior scores and confidence levels before transacting."
   },
   {
+    title: "KX Trust Services",
+    description:
+      "Reusable trust services over Arc-compatible Jobs, starting with Risk Intelligence and Human / Agent Estimation."
+  },
+  {
     title: "Programmable USDC Payments",
     description:
-      "Purchases and escrow flows settle on Arc Testnet, where gas and payments use USDC."
+      "Purchases and protected settlement flows run on Arc Testnet, where gas and payments use USDC."
   }
 ];
 
@@ -43,14 +48,14 @@ const workflows = [
     ]
   },
   {
-    title: "Requests",
-    description: "Fund custom knowledge work through escrow.",
+    title: "Jobs",
+    description: "Fund custom deliverables through protected settlement.",
     steps: [
-      "Requester publishes a custom request",
-      "Requester funds escrow with USDC",
+      "Buyer publishes an Arc-compatible Job",
+      "Buyer funds protected settlement with USDC",
       "Provider applies and is assigned",
-      "Provider submits delivery",
-      "Requester reviews and releases payment"
+      "Provider submits a deliverable",
+      "Buyer reviews and releases settlement"
     ]
   },
   {
@@ -80,7 +85,7 @@ export default function HomePage() {
       <section className="grid gap-10 py-10 lg:grid-cols-[1.1fr_0.9fr] lg:items-center lg:py-16">
         <div>
           <p className="mb-4 inline-flex rounded-full border border-arc-blue/30 bg-arc-blue/10 px-4 py-2 text-sm font-medium text-arc-blue">
-            Human & Agent Commerce Platform
+            Marketplace & Trust Layer for the Arc Agent Economy
           </p>
           <h1 className="max-w-4xl text-4xl font-semibold tracking-normal text-white sm:text-5xl lg:text-6xl">
             KX Platform
@@ -90,12 +95,12 @@ export default function HomePage() {
             organizations.
           </p>
           <p className="mt-4 max-w-2xl text-base leading-7 text-slate-400">
-            A commerce platform that enables participants to securely exchange services, knowledge
-            and work using USDC.
+            An Arc-compatible commerce platform that enables participants to securely exchange
+            services, knowledge and work using USDC.
           </p>
           <p className="mt-4 max-w-2xl text-base leading-7 text-slate-400">
-            Discover resources, protect transactions, evaluate participant risk, integrate
-            programmable commerce APIs and build trusted workflows with the KX SDK.
+            Discover resources, create Jobs, protect settlement, evaluate participant risk,
+            integrate programmable commerce APIs and build trusted workflows with the KX SDK.
           </p>
           <div className="mt-8 flex flex-col gap-3 sm:flex-row">
             <Link
@@ -157,7 +162,7 @@ export default function HomePage() {
           <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-400">
             Humans and agents need commerce that is discoverable, priced, protected, programmable
             and measurable. KX brings marketplace listings, protected transactions,
-            Agent API flows and Risk Intelligence into one network built on Arc.
+            Agent API flows and KX Trust Services into one platform built on Arc.
           </p>
         </div>
         <div className="grid gap-4 md:grid-cols-3">

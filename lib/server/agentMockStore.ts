@@ -1,4 +1,5 @@
 import { keccak256, toUtf8Bytes } from "ethers";
+import { createArcJobId, getIdentitySource } from "@/lib/arcNative";
 import { createLocalResourceId } from "@/lib/localResources";
 import { isPostgresEnabled, pgQuery, upsertParticipant } from "@/lib/server/postgres";
 import { getInstantResources } from "@/services/resources";
@@ -23,17 +24,22 @@ export type AgentRequestDraft = {
   budgetUSDC: string;
   license: LicenseType;
   requesterAddress: string;
+  arcJobId?: string;
   userType?: UserType;
   entityType?: EntityType;
   participantType?: ParticipantType;
   participantName?: string;
   operatorAddress?: string;
+  arcIdentityId?: string;
+  identitySource?: "arc_identity" | "self_declared";
   providerAddress?: string;
   providerUserType?: UserType;
   providerEntityType?: EntityType;
   providerParticipantType?: ParticipantType;
   providerParticipantName?: string;
   providerOperatorAddress?: string;
+  providerArcIdentityId?: string;
+  providerIdentitySource?: "arc_identity" | "self_declared";
   resourceType?: ResourceType;
   status: "Draft" | "Open" | "Submitted";
   agentConsumable: boolean;
@@ -83,6 +89,7 @@ function getStore(): Store {
           entityType: "ORGANIZATION",
           participantName: "Autonomous Economy Lab",
           operatorAddress: "0x4444444444444444444444444444444444444444",
+          identitySource: "self_declared",
           status: "Open",
           agentConsumable: true,
           createdAt: new Date().toISOString()
@@ -104,6 +111,7 @@ function getStore(): Store {
           entityType: "ORGANIZATION",
           participantName: "Regulatory Systems Lab",
           operatorAddress: "0x4444444444444444444444444444444444444444",
+          identitySource: "self_declared",
           status: "Open",
           agentConsumable: true,
           createdAt: new Date().toISOString()
@@ -124,6 +132,7 @@ function getStore(): Store {
           userType: "HUMAN",
           entityType: "INDIVIDUAL",
           participantName: "Independent Governance Researcher",
+          identitySource: "self_declared",
           status: "Open",
           agentConsumable: true,
           createdAt: new Date().toISOString()
@@ -145,6 +154,7 @@ function getStore(): Store {
           entityType: "INDIVIDUAL",
           participantName: "SupportAgent-QA",
           operatorAddress: "0x4444444444444444444444444444444444444444",
+          identitySource: "self_declared",
           status: "Open",
           agentConsumable: true,
           createdAt: new Date().toISOString()
@@ -166,6 +176,7 @@ function getStore(): Store {
           entityType: "ORGANIZATION",
           participantName: "Structured Finance Ops",
           operatorAddress: "0x4444444444444444444444444444444444444444",
+          identitySource: "self_declared",
           status: "Open",
           agentConsumable: true,
           createdAt: new Date().toISOString()
@@ -187,6 +198,7 @@ function getStore(): Store {
           entityType: "INDIVIDUAL",
           participantName: "GovernanceAgent-Review",
           operatorAddress: "0x4444444444444444444444444444444444444444",
+          identitySource: "self_declared",
           status: "Open",
           agentConsumable: true,
           createdAt: new Date().toISOString()
@@ -198,12 +210,31 @@ function getStore(): Store {
   return globalStore.kxPlatformAgentStore;
 }
 
+function withArcNativeResource(resource: InstantResource): InstantResource {
+  return {
+    ...resource,
+    identitySource: resource.identitySource ?? getIdentitySource(resource.arcIdentityId)
+  };
+}
+
+function withArcNativeRequest(request: AgentRequestDraft): AgentRequestDraft {
+  return {
+    ...request,
+    arcJobId: request.arcJobId ?? createArcJobId(request.id),
+    identitySource: request.identitySource ?? getIdentitySource(request.arcIdentityId),
+    providerIdentitySource:
+      request.providerIdentitySource ?? getIdentitySource(request.providerArcIdentityId)
+  };
+}
+
 export function getServerResources(): InstantResource[] {
   const bundled = getInstantResources();
   const published = getStore().resources;
   const bundledIds = new Set(bundled.map((resource) => resource.id));
 
-  return [...published.filter((resource) => !bundledIds.has(resource.id)), ...bundled];
+  return [...published.filter((resource) => !bundledIds.has(resource.id)), ...bundled].map(
+    withArcNativeResource
+  );
 }
 
 async function ensureDbResourcesSeeded() {
@@ -211,13 +242,14 @@ async function ensureDbResourcesSeeded() {
 
   resourcesSeededPromise ??= (async () => {
     for (const resource of getInstantResources()) {
+      const arcNativeResource = withArcNativeResource(resource);
       await pgQuery(
         `
           INSERT INTO resources (id, data, created_at, updated_at)
           VALUES ($1, $2::jsonb, NOW(), NOW())
           ON CONFLICT (id) DO NOTHING
         `,
-        [resource.id, JSON.stringify(resource)]
+        [arcNativeResource.id, JSON.stringify(arcNativeResource)]
       );
       await upsertParticipant({
         walletAddress: resource.sellerAddress,
@@ -226,6 +258,8 @@ async function ensureDbResourcesSeeded() {
         participantType: resource.participantType ?? null,
         participantName: resource.participantName ?? resource.sellerName ?? null,
         operatorAddress: resource.operatorAddress ?? null,
+        arcIdentityId: resource.arcIdentityId ?? null,
+        identitySource: resource.identitySource ?? getIdentitySource(resource.arcIdentityId),
         data: { source: "resource_seed", resourceId: resource.id }
       });
     }
@@ -238,14 +272,14 @@ async function ensureDbRequestsSeeded() {
   if (!isPostgresEnabled()) return;
 
   requestsSeededPromise ??= (async () => {
-    for (const request of getStore().requests) {
+    for (const request of getStore().requests.map(withArcNativeRequest)) {
       await pgQuery(
         `
-          INSERT INTO requests (id, data, created_at, updated_at)
-          VALUES ($1, $2::jsonb, $3::timestamptz, NOW())
+          INSERT INTO requests (id, arc_job_id, data, created_at, updated_at)
+          VALUES ($1, $2, $3::jsonb, $4::timestamptz, NOW())
           ON CONFLICT (id) DO NOTHING
         `,
-        [request.id, JSON.stringify(request), request.createdAt]
+        [request.id, request.arcJobId ?? createArcJobId(request.id), JSON.stringify(request), request.createdAt]
       );
       await upsertParticipant({
         walletAddress: request.requesterAddress,
@@ -254,6 +288,8 @@ async function ensureDbRequestsSeeded() {
         participantType: request.participantType ?? null,
         participantName: request.participantName ?? null,
         operatorAddress: request.operatorAddress ?? null,
+        arcIdentityId: request.arcIdentityId ?? null,
+        identitySource: request.identitySource ?? getIdentitySource(request.arcIdentityId),
         data: { source: "request_seed", requestId: request.id }
       });
     }
@@ -269,7 +305,7 @@ export async function getServerResourcesAsync(): Promise<InstantResource[]> {
   const rows = await pgQuery<{ data: InstantResource }>(
     "SELECT data FROM resources ORDER BY COALESCE((data->>'featured')::boolean, false) DESC, created_at DESC"
   );
-  return rows.map((row) => row.data);
+  return rows.map((row) => withArcNativeResource(row.data));
 }
 
 export function getServerResourceById(id: string): InstantResource | undefined {
@@ -286,7 +322,7 @@ export async function getServerResourceByIdAsync(
     "SELECT data FROM resources WHERE id = $1 LIMIT 1",
     [id]
   );
-  return rows[0]?.data;
+  return rows[0]?.data ? withArcNativeResource(rows[0].data) : undefined;
 }
 
 export function publishServerResource(
@@ -295,7 +331,8 @@ export function publishServerResource(
   const resource: InstantResource = {
     ...input,
     id: input.id || createLocalResourceId(input.title),
-    accessType: "instant"
+    accessType: "instant",
+    identitySource: input.identitySource ?? getIdentitySource(input.arcIdentityId)
   };
   getStore().resources.unshift(resource);
   return resource;
@@ -324,6 +361,8 @@ export async function publishServerResourceAsync(
     participantType: resource.participantType ?? null,
     participantName: resource.participantName ?? resource.sellerName ?? null,
     operatorAddress: resource.operatorAddress ?? null,
+    arcIdentityId: resource.arcIdentityId ?? null,
+    identitySource: resource.identitySource ?? getIdentitySource(resource.arcIdentityId),
     data: { source: "resource_publish", resourceId: resource.id }
   });
 
@@ -331,7 +370,7 @@ export async function publishServerResourceAsync(
 }
 
 export function getServerRequests(): AgentRequestDraft[] {
-  return getStore().requests;
+  return getStore().requests.map(withArcNativeRequest);
 }
 
 export async function getServerRequestsAsync(): Promise<AgentRequestDraft[]> {
@@ -341,13 +380,16 @@ export async function getServerRequestsAsync(): Promise<AgentRequestDraft[]> {
   const rows = await pgQuery<{ data: AgentRequestDraft }>(
     "SELECT data FROM requests ORDER BY created_at DESC"
   );
-  return rows.map((row) => row.data);
+  return rows.map((row) => withArcNativeRequest(row.data));
 }
 
 export function createServerRequest(input: Omit<AgentRequestDraft, "id" | "status" | "createdAt">) {
+  const id = createLocalResourceId(input.title);
   const request: AgentRequestDraft = {
     ...input,
-    id: createLocalResourceId(input.title),
+    id,
+    arcJobId: input.arcJobId ?? createArcJobId(id),
+    identitySource: input.identitySource ?? getIdentitySource(input.arcIdentityId),
     status: "Draft",
     createdAt: new Date().toISOString()
   };
@@ -365,11 +407,14 @@ export async function createServerRequestAsync(
   await ensureDbRequestsSeeded();
   await pgQuery(
     `
-      INSERT INTO requests (id, data, created_at, updated_at)
-      VALUES ($1, $2::jsonb, $3::timestamptz, NOW())
-      ON CONFLICT (id) DO UPDATE SET data = EXCLUDED.data, updated_at = NOW()
+      INSERT INTO requests (id, arc_job_id, data, created_at, updated_at)
+      VALUES ($1, $2, $3::jsonb, $4::timestamptz, NOW())
+      ON CONFLICT (id) DO UPDATE SET
+        arc_job_id = EXCLUDED.arc_job_id,
+        data = EXCLUDED.data,
+        updated_at = NOW()
     `,
-    [request.id, JSON.stringify(request), request.createdAt]
+    [request.id, request.arcJobId ?? createArcJobId(request.id), JSON.stringify(request), request.createdAt]
   );
   await upsertParticipant({
     walletAddress: request.requesterAddress,
@@ -378,6 +423,8 @@ export async function createServerRequestAsync(
     participantType: request.participantType ?? null,
     participantName: request.participantName ?? null,
     operatorAddress: request.operatorAddress ?? null,
+    arcIdentityId: request.arcIdentityId ?? null,
+    identitySource: request.identitySource ?? getIdentitySource(request.arcIdentityId),
     data: { source: "request_create", requestId: request.id }
   });
 
@@ -392,6 +439,7 @@ export function submitServerRequestDelivery({
   providerEntityType,
   providerParticipantName,
   providerOperatorAddress,
+  providerArcIdentityId,
   deliveryText,
   deliveryURI,
   deliveryHash
@@ -403,6 +451,7 @@ export function submitServerRequestDelivery({
   providerEntityType?: EntityType;
   providerParticipantName?: string;
   providerOperatorAddress?: string;
+  providerArcIdentityId?: string;
   deliveryText: string;
   deliveryURI?: string;
   deliveryHash?: string;
@@ -434,6 +483,8 @@ export function submitServerRequestDelivery({
   request.providerParticipantType = providerParticipantType;
   request.providerParticipantName = providerParticipantName;
   request.providerOperatorAddress = providerOperatorAddress;
+  request.providerArcIdentityId = providerArcIdentityId;
+  request.providerIdentitySource = getIdentitySource(providerArcIdentityId);
   request.status = "Submitted";
   request.delivery = delivery;
   return { request, delivery };
@@ -470,6 +521,9 @@ export async function submitServerRequestDeliveryAsync(
     participantType: result.request.providerParticipantType ?? null,
     participantName: result.request.providerParticipantName ?? null,
     operatorAddress: result.request.providerOperatorAddress ?? null,
+    arcIdentityId: result.request.providerArcIdentityId ?? null,
+    identitySource:
+      result.request.providerIdentitySource ?? getIdentitySource(result.request.providerArcIdentityId),
     data: { source: "request_delivery", requestId: result.request.id }
   });
 

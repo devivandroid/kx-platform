@@ -5,6 +5,7 @@ import {
   isParticipantType,
   isUserType
 } from "@/lib/participants";
+import { getIdentitySource, type ArcIdentitySource } from "@/lib/arcNative";
 import type {
   ActivityLevel,
   BehavioralSignalStatus,
@@ -79,6 +80,7 @@ function buildEmptySummary(
   participant: Pick<
     ReputationSummary,
     "userType" | "entityType" | "participantType" | "participantName" | "operatorAddress"
+    | "arcIdentityId" | "identitySource"
   >
 ): ReputationSummary {
   return {
@@ -151,6 +153,15 @@ export function calculateReputation(wallet: string, events: ReputationEvent[]): 
     typeof participantMetadata?.operatorAddress === "string"
       ? participantMetadata.operatorAddress
       : undefined;
+  const arcIdentityId =
+    typeof participantMetadata?.arcIdentityId === "string"
+      ? participantMetadata.arcIdentityId
+      : undefined;
+  const identitySource =
+    participantMetadata?.identitySource === "arc_identity" ||
+    participantMetadata?.identitySource === "self_declared"
+      ? (participantMetadata.identitySource as ArcIdentitySource)
+      : getIdentitySource(arcIdentityId);
   const evidenceCount = walletEvents.length;
   const successfulPayments = walletEvents.filter((event) =>
     ["RESOURCE_PURCHASED", "RESOURCE_SOLD", "PAYMENT_VERIFIED", "FUNDS_RELEASED"].includes(event.eventType)
@@ -206,7 +217,9 @@ export function calculateReputation(wallet: string, events: ReputationEvent[]): 
       entityType,
       participantType,
       participantName,
-      operatorAddress
+      operatorAddress,
+      arcIdentityId,
+      identitySource
     });
   }
 
@@ -421,6 +434,8 @@ export function calculateReputation(wallet: string, events: ReputationEvent[]): 
     participantType,
     participantName,
     operatorAddress,
+    arcIdentityId,
+    identitySource,
     reputationScore: score,
     financialRiskScore,
     riskTier,

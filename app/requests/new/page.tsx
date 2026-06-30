@@ -9,6 +9,7 @@ import { PageShell } from "@/components/PageShell";
 import { TransactionStatus, type TransactionState } from "@/components/TransactionStatus";
 import { isEscrowConfigured, useEscrowContract } from "@/hooks/useEscrowContract";
 import { useWallet } from "@/hooks/useWallet";
+import { getIdentitySource, getIdentitySourceLabel } from "@/lib/arcNative";
 import { escrowAbi } from "@/lib/contracts/microWorkEscrow";
 import { getLegacyParticipantType, isEntityType, isUserType } from "@/lib/participants";
 import { encodeJsonDataUri } from "@/lib/utf8Base64";
@@ -43,7 +44,8 @@ export default function NewRequestPage() {
       entityType: "INDIVIDUAL",
       participantType: "human",
       participantName: "",
-      operatorAddress: ""
+      operatorAddress: "",
+      arcIdentityId: ""
     }
   });
   const selectedUserType = watch("userType");
@@ -105,6 +107,8 @@ export default function NewRequestPage() {
         ),
         participantName: values.participantName.trim() || undefined,
         operatorAddress: values.operatorAddress.trim() || undefined,
+        arcIdentityId: values.arcIdentityId.trim() || undefined,
+        identitySource: getIdentitySource(values.arcIdentityId.trim() || undefined),
         resourceType: values.resourceType,
         agentConsumable: values.agentConsumable,
         deadline: values.deadline || null,
@@ -160,13 +164,13 @@ export default function NewRequestPage() {
     <PageShell>
       <PageHeader
         eyebrow="Requests"
-        title="Create Request"
-        description="Request a custom knowledge asset or service and secure the budget with USDC escrow on Arc."
+        title="Create Job"
+        description="Create an Arc-compatible Job for a custom deliverable and protect settlement with USDC on Arc."
       />
 
       {!isEscrowConfigured ? (
         <div className="mb-5 rounded-lg border border-amber-300/40 bg-amber-300/10 p-4 text-sm text-amber-100">
-          Escrow contract is not configured. Deploy the contract and set
+          Protected settlement contract is not configured. Deploy the contract and set
           NEXT_PUBLIC_ESCROW_CONTRACT.
         </div>
       ) : null}
@@ -299,7 +303,20 @@ export default function NewRequestPage() {
         </label>
 
         <label className="grid gap-2 lg:col-span-2">
-          <span className="text-sm font-medium text-slate-200">Requirements</span>
+          <span className="text-sm font-medium text-slate-200">Arc Identity ID (optional)</span>
+          <input
+            {...register("arcIdentityId")}
+            className="rounded-lg border border-arc-border bg-black/30 px-4 py-3 text-white outline-none transition placeholder:text-slate-600 focus:border-arc-blue"
+            placeholder="Arc Identity reference, if available"
+          />
+          <span className="text-xs leading-5 text-slate-500">
+            Identity Source: {getIdentitySourceLabel(getIdentitySource(watch("arcIdentityId") || undefined))}.
+            Human / Agent Estimation remains independent from declared identity.
+          </span>
+        </label>
+
+        <label className="grid gap-2 lg:col-span-2">
+          <span className="text-sm font-medium text-slate-200">Deliverable requirements</span>
           <input
             {...register("requirements")}
             className="rounded-lg border border-arc-border bg-black/30 px-4 py-3 text-white outline-none transition placeholder:text-slate-600 focus:border-arc-blue"
@@ -341,7 +358,7 @@ export default function NewRequestPage() {
             className="inline-flex w-full items-center justify-center gap-2 rounded-lg bg-arc-mint px-5 py-3 text-sm font-semibold text-arc-ink transition hover:bg-white disabled:cursor-not-allowed disabled:opacity-60 sm:w-auto"
           >
             {isTxBusy ? <LoadingSpinner /> : null}
-            {isTxBusy ? "Waiting for wallet..." : "Create Request"}
+            {isTxBusy ? "Waiting for wallet..." : "Create Job"}
           </button>
         </div>
       </form>

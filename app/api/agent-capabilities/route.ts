@@ -12,6 +12,25 @@ export const runtime = "nodejs";
 export async function GET() {
   return NextResponse.json({
     name: "KX Agent API",
+    positioning: "Marketplace & Trust Layer for the Arc Agent Economy",
+    arcNative: {
+      compatible: true,
+      identityRegistryConfigured: Boolean(process.env.ARC_IDENTITY_REGISTRY_ADDRESS),
+      jobRegistryConfigured: Boolean(process.env.ARC_JOB_REGISTRY_ADDRESS),
+      reputationRegistryConfigured: Boolean(process.env.ARC_REPUTATION_REGISTRY_ADDRESS),
+      validationRegistryConfigured: Boolean(process.env.ARC_VALIDATION_REGISTRY_ADDRESS),
+      reputationRegistryAbiConfigured: Boolean(process.env.ARC_REPUTATION_REGISTRY_ABI_JSON),
+      validationRegistryAbiConfigured: Boolean(process.env.ARC_VALIDATION_REGISTRY_ABI_JSON),
+      publicTerms: ["Job", "Deliverable", "Settlement", "Identity"],
+      jobModel: "KX Jobs map internally to Arc-compatible Job metadata when available.",
+      identityModel:
+        "Arc Identity is preferred when arcIdentityId is provided; otherwise KX uses self-declared identity metadata.",
+      reputationModel:
+        "Arc Reputation is consumed from the configured official registry when address, ABI and read method are provided.",
+      validationModel:
+        "Arc Validations are consumed from the configured official registry when address, ABI and read method are provided.",
+      advancedStandards: ["ERC-8004", "ERC-8183"]
+    },
     network: {
       name: "Arc Testnet",
       chainId: ARC_TESTNET_CHAIN_ID,
@@ -34,6 +53,17 @@ export async function GET() {
       }
     },
     risk_intelligence: true,
+    trust_services: {
+      name: "KX Trust Services",
+      services: [
+        "Risk Intelligence",
+        "Human / Agent Estimation",
+        "Arc Reputation consumption",
+        "Arc Validation consumption"
+      ],
+      planned: ["Fraud Signals", "Compliance adapters"],
+      scope: "Reusable trust services over Arc-compatible Jobs"
+    },
     risk_profile_endpoint: "/api/risk/profile/{wallet}",
     risk_network_profile_endpoint: "/api/risk/network/{wallet}",
     risk_combined_profile_endpoint: "/api/risk/profile/{wallet}?source=combined",
@@ -177,13 +207,13 @@ export async function GET() {
         responseCodes: [200, 400]
       },
       {
-        id: "search_requests",
+        id: "search_jobs",
         method: "GET",
         endpoint: "/api/requests/search",
         query: ["q", "category", "license", "status", "agentConsumable"]
       },
       {
-        id: "create_request_draft",
+        id: "create_job_draft",
         method: "POST",
         endpoint: "/api/requests/create",
         requiredFields: [
@@ -199,11 +229,12 @@ export async function GET() {
           "entityType",
           "participantType",
           "participantName",
-          "operatorAddress"
+          "operatorAddress",
+          "arcIdentityId"
         ]
       },
       {
-        id: "submit_request_delivery",
+        id: "submit_job_deliverable",
         method: "POST",
         endpoint: "/api/requests/{id}/submit",
         requiredFields: ["providerAddress", "deliveryText"],
@@ -212,7 +243,8 @@ export async function GET() {
           "providerUserType",
           "providerEntityType",
           "providerParticipantName",
-          "providerOperatorAddress"
+          "providerOperatorAddress",
+          "providerArcIdentityId"
         ]
       }
     ],

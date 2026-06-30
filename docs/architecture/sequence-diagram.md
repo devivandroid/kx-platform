@@ -9,23 +9,25 @@ sequenceDiagram
   actor Buyer
   participant Marketplace
   participant RiskGuard as Risk Guard
+  participant Trust as KX Trust Services
   participant Engine as Risk Intelligence Engine
   participant RiskApis as Public Risk Intelligence APIs
   participant Protected as Protected Transaction
   participant USDC
   participant Seller
 
-  Buyer->>Marketplace: Select resource or request
+  Buyer->>Marketplace: Select resource or Job
   Marketplace->>RiskGuard: Evaluate seller/provider wallet with policy
-  RiskGuard->>Engine: Load participant profile
+  RiskGuard->>Trust: Request trust assessment
+  Trust->>Engine: Load participant profile
   Engine->>RiskApis: Resolve profile, summary and signals
   RiskApis-->>Engine: RiskProfile or no_data profile
   Engine-->>RiskGuard: Scores, tier, confidence, profileStatus
 
   alt Decision is allow
     RiskGuard-->>Marketplace: allow
-    Marketplace->>Protected: Create or continue protected transaction
-    Protected->>USDC: Transfer or escrow USDC
+    Marketplace->>Protected: Create or continue protected settlement
+    Protected->>USDC: Transfer or settle USDC
     USDC-->>Seller: Payment settlement
     Protected-->>Buyer: Receipt and transaction proof
   else Decision is review
@@ -45,10 +47,11 @@ sequenceDiagram
 ## Components
 
 - **Buyer**: human, agent or organization initiating commerce.
-- **Marketplace**: product surface that starts resource purchase or request workflows.
+- **Marketplace**: product surface that starts resource purchase or Job workflows.
 - **Risk Guard**: evaluates a client-defined risk policy before a transaction proceeds.
+- **KX Trust Services**: reusable services over Arc-compatible Jobs, currently Risk Intelligence and Human / Agent Estimation.
 - **Risk Intelligence Engine**: computes participant profile status, risk tier, confidence and signals.
 - **Public Risk Intelligence APIs**: REST layer exposing profile, summary, signals, model and participants endpoints.
-- **Protected Transaction**: escrow-backed transaction flow for custom work and review-before-release scenarios.
+- **Protected Transaction**: protected settlement flow for custom work and review-before-release scenarios.
 - **USDC**: settlement asset for direct transfers and protected transactions.
 - **Seller**: resource seller or service provider receiving payment after successful flow.

@@ -42,6 +42,8 @@ export type ReputationSummary = {
   participantType?: ParticipantType;
   participantName?: string;
   operatorAddress?: string;
+  arcIdentityId?: string;
+  identitySource?: "arc_identity" | "self_declared";
   reputationScore: number;
   financialRiskScore: number;
   riskTier: RiskTier;

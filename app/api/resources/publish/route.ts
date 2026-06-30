@@ -1,5 +1,7 @@
 import { isAddress } from "ethers";
 import { NextResponse, type NextRequest } from "next/server";
+import { getIdentitySource, normalizeArcIdentityId } from "@/lib/arcNative";
+import { resolveArcIdentity } from "@/lib/server/arc/arcIdentity";
 import {
   getEntityTypeFromLegacy,
   getLegacyParticipantType,
@@ -85,6 +87,15 @@ export async function POST(request: NextRequest) {
     typeof body.operatorAddress === "string" && body.operatorAddress.trim()
       ? body.operatorAddress.trim()
       : undefined;
+  const providedArcIdentityId = normalizeArcIdentityId(body.arcIdentityId);
+  const resolvedIdentity = providedArcIdentityId
+    ? {
+        arcIdentityId: providedArcIdentityId,
+        identitySource: getIdentitySource(providedArcIdentityId)
+      }
+    : await resolveArcIdentity(sellerAddress);
+  const arcIdentityId = resolvedIdentity.arcIdentityId;
+  const identitySource = resolvedIdentity.identitySource;
   const deliveryType = body.deliveryType === "download" ? "download" : "inline";
   const files = Array.isArray(body.files) ? (body.files as ResourceFile[]) : [];
 
@@ -110,6 +121,8 @@ export async function POST(request: NextRequest) {
     participantType: participantType ?? getLegacyParticipantType(userType),
     participantName,
     operatorAddress,
+    arcIdentityId,
+    identitySource,
     sellerAddress,
     deliveryType: deliveryType as DeliveryType,
     previewText: String(body.previewText || body.description),

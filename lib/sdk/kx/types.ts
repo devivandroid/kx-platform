@@ -52,6 +52,7 @@ export type PublishResourceInput = {
   participantType?: ParticipantType;
   participantName?: string;
   operatorAddress?: string;
+  arcIdentityId?: string;
   deliveryType?: DeliveryType;
   previewText?: string;
   unlockedContentMock?: string;
@@ -169,6 +170,7 @@ export type SearchRequestsParams = {
 
 export type RequestDraft = {
   id: string;
+  arcJobId?: string | null;
   title: string;
   description: string;
   requirements: string;
@@ -180,12 +182,17 @@ export type RequestDraft = {
   participantType?: ParticipantType;
   participantName?: string;
   operatorAddress?: string;
+  arcIdentityId?: string | null;
+  identitySource?: "arc_identity" | "self_declared" | string;
   providerAddress?: string | null;
   providerUserType?: UserType;
   providerEntityType?: EntityType;
   providerParticipantType?: ParticipantType;
   providerParticipantName?: string;
   providerOperatorAddress?: string;
+  providerArcIdentityId?: string | null;
+  providerIdentitySource?: "arc_identity" | "self_declared" | string;
+  settlement?: string;
   status: "Draft" | "Open" | "Submitted" | string;
   agentConsumable: boolean;
   detailUrl?: string;
@@ -196,6 +203,7 @@ export type SearchRequestsResponse = {
 };
 
 export type CreateRequestInput = {
+  arcJobId?: string;
   title: string;
   description: string;
   requirements: string;
@@ -209,6 +217,7 @@ export type CreateRequestInput = {
   participantType?: ParticipantType;
   participantName?: string;
   operatorAddress?: string;
+  arcIdentityId?: string;
   agentConsumable?: boolean;
 };
 
@@ -225,6 +234,7 @@ export type SubmitDeliveryInput = {
   providerParticipantType?: ParticipantType;
   providerParticipantName?: string;
   providerOperatorAddress?: string;
+  providerArcIdentityId?: string;
   deliveryText: string;
   deliveryURI?: string;
   deliveryHash?: string;
@@ -238,6 +248,8 @@ export type SubmitDeliveryResponse = {
   providerParticipantType?: ParticipantType;
   providerParticipantName?: string;
   providerOperatorAddress?: string;
+  providerArcIdentityId?: string | null;
+  providerIdentitySource?: "arc_identity" | "self_declared" | string;
   deliveryHash: string;
   deliveryURI: string;
   message: string;

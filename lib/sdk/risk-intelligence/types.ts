@@ -28,6 +28,8 @@ export type RiskSdkParticipant = {
   entityType?: "INDIVIDUAL" | "BUSINESS" | "ORGANIZATION" | "unknown";
   name: string | null;
   operatorAddress: string | null;
+  arcIdentityId?: string | null;
+  identitySource?: "arc_identity" | "self_declared";
 };
 
 export type RiskSdkScores = {
@@ -83,6 +85,46 @@ export type RiskSdkRiskSignal = {
   description: string;
 };
 
+export type RiskSdkIdentityEstimation = {
+  estimatedUserType: "Likely Human" | "Likely Agent" | "Unknown";
+  probability: number;
+  confidence: ConfidenceLevel;
+  evidenceSource: "Arc Network";
+  declaredUserType?: "HUMAN" | "AGENT" | "unknown";
+  identityMatch: "OK" | "Mismatch" | "Not declared";
+  cacheSource?: "live_estimation" | "postgres_cache";
+  lastEstimatedAt?: string;
+  signals: Array<{
+    label: string;
+    result: "Human" | "Agent-like" | "Unknown";
+    explanation: string;
+  }>;
+  limitations: string[];
+};
+
+export type RiskSdkArcRegistrySignal = {
+  source: "Arc Reputation" | "Arc Validations";
+  status:
+    | "found"
+    | "not_configured"
+    | "abi_unavailable"
+    | "method_unavailable"
+    | "not_found"
+    | "unavailable";
+  registryAddress?: string;
+  method?: string;
+  entries: Array<{
+    label?: string;
+    status?: string;
+    value?: string;
+    tag?: string;
+    issuer?: string;
+    txHash?: string;
+    raw?: string;
+  }>;
+  message?: string;
+};
+
 export type RiskGuardPolicy = {
   maxRiskScore?: number;
   allowedRiskTiers?: RiskTier[];
@@ -123,6 +165,9 @@ export type RiskProfileResponse = {
   scores: RiskSdkScores;
   activity: RiskSdkActivity;
   metadata?: RiskSdkMetadata;
+  identityEstimation?: RiskSdkIdentityEstimation;
+  arcReputation?: RiskSdkArcRegistrySignal;
+  arcValidations?: RiskSdkArcRegistrySignal;
   behavioralSignals: RiskSdkBehavioralSignal[];
   riskSignals: RiskSdkRiskSignal[];
   limitations: string[];
@@ -155,6 +200,9 @@ export type RiskSummaryResponse = {
     lastActivity: string | null;
     evidenceCount: number;
   };
+  identityEstimation?: RiskSdkIdentityEstimation;
+  arcReputation?: RiskSdkArcRegistrySignal;
+  arcValidations?: RiskSdkArcRegistrySignal;
   limitations: string[];
 };
 
@@ -169,6 +217,9 @@ export type RiskSignalsResponse = {
   profileStatus: RiskProfileStatus;
   message?: string;
   recommendation?: string;
+  identityEstimation?: RiskSdkIdentityEstimation;
+  arcReputation?: RiskSdkArcRegistrySignal;
+  arcValidations?: RiskSdkArcRegistrySignal;
   behavioralSignals: RiskSdkBehavioralSignal[];
   riskSignals: RiskSdkRiskSignal[];
   limitations: string[];

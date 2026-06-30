@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { TaskStatusBadge } from "@/components/TaskStatusBadge";
+import { getIdentitySourceLabel } from "@/lib/arcNative";
 import type { EscrowTask } from "@/lib/contracts/microWorkEscrow";
 import {
   getEntityTypeLabel,
@@ -35,9 +36,9 @@ export function TaskCard({ task }: TaskCardProps) {
   const onChainTask = isOnChainTask(task);
   const metadata = onChainTask ? parseTaskMetadata(task.metadataURI) : null;
   const title = onChainTask
-    ? getTaskDisplayTitle(task.metadataURI, `Request #${task.id.toString()}`)
+    ? getTaskDisplayTitle(task.metadataURI, `Job #${task.id.toString()}`)
     : task.title;
-  const category = onChainTask ? metadata?.category || "Knowledge Request" : task.category;
+  const category = onChainTask ? metadata?.category || "Custom Job" : task.category;
   const description = onChainTask ? getTaskDisplayDescription(task.metadataURI) : task.description;
   const amount = onChainTask ? task.amountUsdc : task.budgetUsdc;
   const status = onChainTask ? task.statusLabel : task.status;
@@ -50,13 +51,15 @@ export function TaskCard({ task }: TaskCardProps) {
           <p className="text-xs font-medium uppercase tracking-normal text-arc-blue">{category}</p>
           <h3 className="mt-2 text-lg font-semibold text-white">{title}</h3>
           {onChainTask ? (
-            <p className="mt-1 text-xs text-slate-500">Request #{task.id.toString()}</p>
+            <p className="mt-1 text-xs text-slate-500">
+              Job #{task.id.toString()} · Arc Compatible
+            </p>
           ) : null}
         </div>
         <div className="flex flex-wrap justify-end gap-2">
           {onChainTask ? (
             <span className="rounded-full border border-arc-blue/40 bg-arc-blue/10 px-3 py-1 text-xs font-semibold text-arc-blue">
-              Manual Access (Escrow)
+              Protected Settlement
             </span>
           ) : null}
           {onChainTask ? (
@@ -76,13 +79,14 @@ export function TaskCard({ task }: TaskCardProps) {
         <div className="mt-4 grid gap-1 text-xs text-slate-500">
           <p>License: {metadata?.license || "Not specified"}</p>
           <p>Type: {metadata?.resourceType || "Custom Service"}</p>
+          <p>Identity Source: {getIdentitySourceLabel(metadata?.identitySource)}</p>
           <p>
             User / entity:{" "}
             {getUserTypeLabel(metadata?.userType ?? getUserTypeFromLegacy(metadata?.participantType))} /{" "}
             {getEntityTypeLabel(metadata?.entityType)}
           </p>
           <p>
-            Requester: {metadata?.participantName ? `${metadata.participantName} - ` : ""}
+            Buyer: {metadata?.participantName ? `${metadata.participantName} - ` : ""}
             <a
               href={getExplorerAddressUrl(task.client)}
               target="_blank"
@@ -114,7 +118,7 @@ export function TaskCard({ task }: TaskCardProps) {
           <span className="font-semibold text-white">{amount}</span> USDC
         </p>
         <Link href={href} className="text-sm font-medium text-arc-blue hover:text-white">
-          View Request
+          View Job
         </Link>
       </div>
     </article>

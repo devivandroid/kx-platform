@@ -2,6 +2,10 @@
 
 Internal TypeScript client for the KX Public Risk Intelligence Service.
 
+Profiles may include `arcReputation` and `arcValidations` when the deployed API is configured
+with official Arc registry addresses, official ABI JSON and official read methods. KX does not
+guess registry ABIs or replace Arc Reputation/Validation; KX Commercial Rating remains separate.
+
 This SDK is kept inside the repository for now. It is not published to npm and does not add
 authentication, API keys, billing, rate limits or production compliance screening.
 
@@ -48,6 +52,12 @@ const guard = await client.evaluateTransactionRisk("0x...", {
 
 Arc Network reads prefer indexed data by default when a snapshot is less than 1 minute old. Pass
 `{ useIndexedData: false }` to force a fresh Arc Network refresh for a wallet.
+
+Responses can include `identityEstimation`, a Human / Agent behavioral estimation derived only
+from Arc Network evidence. It uses the latest 50 wallet transactions needed for estimation,
+keeps declared `userType` separate from `estimatedUserType`, and includes `identityMatch`.
+Fresh reindexing replaces the prior transaction sample instead of accumulating old samples.
+Treat it as an explainable estimation, not identity verification or compliance screening.
 
 ## Risk Guard
 

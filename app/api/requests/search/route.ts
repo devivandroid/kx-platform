@@ -29,6 +29,7 @@ export async function GET(request: NextRequest) {
   return NextResponse.json({
     requests: requests.map((item) => ({
       id: item.id,
+      arcJobId: item.arcJobId ?? null,
       title: item.title,
       description: item.description,
       requirements: item.requirements,
@@ -40,6 +41,8 @@ export async function GET(request: NextRequest) {
       participantType: item.participantType,
       participantName: item.participantName,
       operatorAddress: item.operatorAddress,
+      arcIdentityId: item.arcIdentityId ?? null,
+      identitySource: item.identitySource ?? "self_declared",
       resourceType: item.resourceType || "Custom Service",
       providerAddress: item.providerAddress ?? null,
       providerUserType: item.providerUserType ?? null,
@@ -47,7 +50,10 @@ export async function GET(request: NextRequest) {
       providerParticipantType: item.providerParticipantType,
       providerParticipantName: item.providerParticipantName,
       providerOperatorAddress: item.providerOperatorAddress,
+      providerArcIdentityId: item.providerArcIdentityId ?? null,
+      providerIdentitySource: item.providerIdentitySource ?? "self_declared",
       status: item.status,
+      settlement: "protected_usdc_settlement",
       agentConsumable: item.agentConsumable,
       detailUrl: `/requests`
     }))

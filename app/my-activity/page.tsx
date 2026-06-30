@@ -28,12 +28,12 @@ export default function MyActivityPage() {
       <PageHeader
         eyebrow="Activity"
         title="My Activity"
-        description="Track requests where your wallet is the requester or assigned provider."
+        description="Track Jobs where your wallet is the buyer or assigned provider."
       />
 
       {!isEscrowConfigured ? (
         <div className="mb-5 rounded-lg border border-amber-300/40 bg-amber-300/10 p-4 text-sm text-amber-100">
-          Escrow contract is not configured. Deploy the contract and set
+          Protected settlement contract is not configured. Deploy the contract and set
           NEXT_PUBLIC_ESCROW_CONTRACT.
         </div>
       ) : null}
@@ -42,7 +42,7 @@ export default function MyActivityPage() {
         <div className="rounded-lg border border-arc-border bg-arc-panel/80 p-6">
           <p className="text-sm font-semibold text-white">Wallet required</p>
           <p className="mt-2 text-sm leading-6 text-slate-400">
-            Connect MetaMask to view requests where your wallet is the requester or provider.
+            Connect MetaMask to view Jobs where your wallet is the buyer or provider.
           </p>
         </div>
       ) : null}
@@ -56,7 +56,7 @@ export default function MyActivityPage() {
 
       <div className="grid gap-6 lg:grid-cols-2">
         <section>
-          <h2 className="mb-4 text-lg font-semibold text-white">Requests you created</h2>
+          <h2 className="mb-4 text-lg font-semibold text-white">Jobs you created</h2>
           <div className="grid gap-4">
             {requesterRequests.length > 0 ? (
               requesterRequests.map((request) => (
@@ -64,12 +64,12 @@ export default function MyActivityPage() {
               ))
             ) : (
               <div className="rounded-lg border border-dashed border-arc-border bg-black/20 p-5 text-sm text-slate-500">
-                <p className="font-semibold text-slate-300">No requester activity found.</p>
+                <p className="font-semibold text-slate-300">No buyer activity found.</p>
                 <Link
                   href="/publish-resource"
                   className="mt-3 inline-flex text-arc-blue hover:text-white"
                 >
-                  Create Request
+                  Create Job
                 </Link>
               </div>
             )}
@@ -77,7 +77,7 @@ export default function MyActivityPage() {
         </section>
 
         <section>
-          <h2 className="mb-4 text-lg font-semibold text-white">Requests assigned to you</h2>
+          <h2 className="mb-4 text-lg font-semibold text-white">Jobs assigned to you</h2>
           <div className="grid gap-4">
             {providerRequests.length > 0 ? (
               providerRequests.map((request) => (
@@ -87,7 +87,7 @@ export default function MyActivityPage() {
               <div className="rounded-lg border border-dashed border-arc-border bg-black/20 p-5 text-sm text-slate-500">
                 <p className="font-semibold text-slate-300">No provider activity found.</p>
                 <Link href="/requests" className="mt-3 inline-flex text-arc-blue hover:text-white">
-                  Browse Requests
+                  Browse Jobs
                 </Link>
               </div>
             )}

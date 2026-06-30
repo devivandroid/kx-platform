@@ -54,6 +54,24 @@ type ReputationLookupResult = {
       description?: string;
     };
   };
+  identityEstimation?: {
+    estimatedUserType: "Likely Human" | "Likely Agent" | "Unknown";
+    probability: number;
+    confidence: string;
+    evidenceSource: "Arc Network";
+    declaredUserType?: "HUMAN" | "AGENT" | "unknown";
+    identityMatch: "OK" | "Mismatch" | "Not declared";
+    cacheSource?: "live_estimation" | "postgres_cache";
+    lastEstimatedAt?: string;
+    signals: Array<{
+      label: string;
+      result: "Human" | "Agent-like" | "Unknown";
+      explanation: string;
+    }>;
+    limitations: string[];
+  };
+  arcReputation?: ArcRegistrySignal;
+  arcValidations?: ArcRegistrySignal;
   behavioralSignals?: Array<{
     label: string;
     value: string;
@@ -81,6 +99,28 @@ type ReputationLookupResult = {
   };
   lastActivity: string | null;
   limitations: string[];
+};
+
+type ArcRegistrySignal = {
+  source: "Arc Reputation" | "Arc Validations";
+  status:
+    | "found"
+    | "not_configured"
+    | "abi_unavailable"
+    | "method_unavailable"
+    | "not_found"
+    | "unavailable";
+  registryAddress?: string;
+  method?: string;
+  entries: Array<{
+    label?: string;
+    status?: string;
+    value?: string;
+    tag?: string;
+    issuer?: string;
+    txHash?: string;
+  }>;
+  message?: string;
 };
 
 type RiskSource = "internal" | "arc_network" | "combined";
@@ -124,6 +164,70 @@ function getStatusAccent(status: string): string {
   if (status === "Watch" || status === "Monitor") return "text-amber-200";
   if (status === "Elevated") return "text-red-200";
   return "text-slate-400";
+}
+
+function getArcRegistryStatusLabel(status: ArcRegistrySignal["status"]): string {
+  if (status === "found") return "Available";
+  if (status === "not_configured") return "Not configured";
+  if (status === "abi_unavailable") return "Official ABI not configured";
+  if (status === "method_unavailable") return "Official read method not configured";
+  if (status === "not_found") return "No record found";
+  return "Unavailable";
+}
+
+function ArcRegistryPanel({ signal }: { signal?: ArcRegistrySignal }) {
+  if (!signal) return null;
+
+  return (
+    <div className="rounded-lg border border-arc-border bg-white/[0.03] p-4">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <p className="text-sm font-semibold text-white">{signal.source}</p>
+          <p className="mt-1 text-xs leading-5 text-slate-500">
+            Source of truth: Arc registry when configured. KX does not infer KYC, AML or
+            compliance status from this data.
+          </p>
+        </div>
+        <span className="rounded-full border border-slate-500/40 px-2 py-1 text-xs text-slate-300">
+          {getArcRegistryStatusLabel(signal.status)}
+        </span>
+      </div>
+
+      {signal.registryAddress ? (
+        <p className="mt-3 break-all text-xs text-slate-500">
+          Registry: <span className="text-slate-300">{signal.registryAddress}</span>
+        </p>
+      ) : null}
+      {signal.method ? (
+        <p className="mt-1 text-xs text-slate-500">
+          Read method: <span className="text-slate-300">{signal.method}</span>
+        </p>
+      ) : null}
+      {signal.message ? <p className="mt-3 text-xs leading-5 text-slate-400">{signal.message}</p> : null}
+
+      {signal.entries.length > 0 ? (
+        <div className="mt-3 grid gap-2">
+          {signal.entries.map((entry, index) => (
+            <div key={`${entry.label ?? entry.tag ?? index}`} className="rounded-lg border border-arc-border bg-black/20 p-3">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <p className="text-sm font-medium text-white">
+                  {entry.label ?? entry.tag ?? `${signal.source} entry ${index + 1}`}
+                </p>
+                {entry.status ? (
+                  <span className="rounded-full border border-slate-500/40 px-2 py-1 text-xs text-slate-300">
+                    {entry.status}
+                  </span>
+                ) : null}
+              </div>
+              {entry.value ? <p className="mt-2 text-xs text-slate-400">{entry.value}</p> : null}
+              {entry.issuer ? <p className="mt-1 text-xs text-slate-500">Issuer: {entry.issuer}</p> : null}
+              {entry.txHash ? <p className="mt-1 break-all text-xs text-slate-500">Evidence tx: {entry.txHash}</p> : null}
+            </div>
+          ))}
+        </div>
+      ) : null}
+    </div>
+  );
 }
 
 function formatDate(value: string | null | undefined): string {
@@ -182,6 +286,7 @@ export function ReputationLookup() {
   const [wallet, setWallet] = useState("");
   const [source, setSource] = useState<RiskSource>("combined");
   const [useIndexedData, setUseIndexedData] = useState(true);
+  const [showIdentityEstimation, setShowIdentityEstimation] = useState(false);
   const [result, setResult] = useState<ReputationLookupResult | null>(null);
   const [breakdown, setBreakdown] = useState<RiskBreakdown>({ internal: null, network: null });
   const [error, setError] = useState("");
@@ -227,6 +332,7 @@ export function ReputationLookup() {
       setLoading(false);
     }
   };
+  const identityEstimation = result?.identityEstimation ?? breakdown.network?.identityEstimation;
 
   return (
     <div className="rounded-lg border border-arc-border bg-arc-panel/80 p-5">
@@ -279,6 +385,20 @@ export function ReputationLookup() {
           <span className="font-semibold text-slate-200">Use indexed data</span>
           <span className="block">
             Uses a stored Arc Network snapshot if it is less than 1 minute old. Uncheck to refresh from Arc.
+          </span>
+        </span>
+      </label>
+      <label className="mt-3 flex max-w-max items-start gap-2 text-xs text-slate-400">
+        <input
+          type="checkbox"
+          checked={showIdentityEstimation}
+          onChange={(event) => setShowIdentityEstimation(event.target.checked)}
+          className="mt-0.5 h-4 w-4 rounded border-arc-border bg-black/30 accent-arc-blue"
+        />
+        <span>
+          <span className="font-semibold text-slate-200">Human / Agent Estimation</span>
+          <span className="block">
+            Optional Arc Network behavior estimation. It does not use declared user type as model input.
           </span>
         </span>
       </label>
@@ -345,7 +465,7 @@ export function ReputationLookup() {
                   <div>
                     <p className="text-sm font-semibold text-white">KX Data</p>
                     <p className="mt-1 text-xs text-slate-500">
-                      Marketplace, purchases, requests, deliveries and ratings.
+                      Marketplace, purchases, Jobs, deliverables and ratings.
                     </p>
                   </div>
                   <span className="rounded-full border border-slate-500/40 px-2 py-1 text-xs text-slate-300">
@@ -462,6 +582,76 @@ export function ReputationLookup() {
             </div>
           </div>
 
+          {showIdentityEstimation ? (
+            <div className="rounded-lg border border-arc-border bg-white/[0.03] p-4">
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                <div>
+                  <p className="text-sm font-semibold text-white">Human / Agent Estimation</p>
+                  <p className="mt-1 max-w-2xl text-xs leading-5 text-slate-500">
+                    Lightweight behavioral estimation based only on Arc Network activity. This is
+                    not identity verification, KYC, AML, compliance screening or bot detection.
+                  </p>
+                </div>
+                <span className="rounded-full border border-slate-500/40 px-2 py-1 text-xs text-slate-300">
+                  Evidence source: {identityEstimation?.evidenceSource ?? "Arc Network"}
+                </span>
+              </div>
+
+              {identityEstimation ? (
+                <>
+                  <dl className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
+                    {[
+                      ["Estimated Identity", identityEstimation.estimatedUserType],
+                      ["Probability", `${identityEstimation.probability}%`],
+                      ["Confidence", identityEstimation.confidence],
+                      [
+                        "Declared Identity",
+                        identityEstimation.declaredUserType &&
+                        identityEstimation.declaredUserType !== "unknown"
+                          ? identityEstimation.declaredUserType
+                          : "Not declared"
+                      ],
+                      ["Identity Match", identityEstimation.identityMatch]
+                    ].map(([label, value]) => (
+                      <div key={label} className="rounded-lg border border-arc-border bg-black/20 p-3">
+                        <dt className="text-xs text-slate-500">{label}</dt>
+                        <dd className="mt-1 text-sm font-semibold text-white">{value}</dd>
+                      </div>
+                    ))}
+                  </dl>
+
+                  <div className="mt-4 grid gap-2 lg:grid-cols-2">
+                    {identityEstimation.signals.map((signal) => (
+                      <div
+                        key={signal.label}
+                        className="rounded-lg border border-arc-border bg-black/20 p-3"
+                      >
+                        <div className="flex items-center justify-between gap-3">
+                          <p className="text-sm font-semibold text-white">{signal.label}</p>
+                          <span className="rounded-full border border-slate-500/40 px-2 py-1 text-xs text-slate-300">
+                            {signal.result}
+                          </span>
+                        </div>
+                        <p className="mt-2 text-xs leading-5 text-slate-500">{signal.explanation}</p>
+                      </div>
+                    ))}
+                  </div>
+                </>
+              ) : (
+                <p className="mt-4 rounded-lg border border-slate-500/30 bg-black/20 p-3 text-sm text-slate-400">
+                  No Arc Network estimation is available for this wallet yet.
+                </p>
+              )}
+            </div>
+          ) : null}
+
+          {(result.arcReputation || result.arcValidations) ? (
+            <div className="grid gap-4 lg:grid-cols-2">
+              <ArcRegistryPanel signal={result.arcReputation} />
+              <ArcRegistryPanel signal={result.arcValidations} />
+            </div>
+          ) : null}
+
           <dl className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
             {[
               ["Financial Behavior Score", result.scores?.financialBehaviorScore ?? result.reputationScore],
@@ -495,14 +685,14 @@ export function ReputationLookup() {
                 ["Failed payments", result.activity?.failedPayments ?? 0],
                 ["Resources purchased", result.activity?.resourcesPurchased ?? result.metrics.resourcesPurchased],
                 ["Resources downloaded", result.activity?.resourcesDownloaded ?? result.metrics.resourcesDownloaded],
-                ["Requests created", result.activity?.requestsCreated ?? 0],
+                ["Jobs created", result.activity?.requestsCreated ?? 0],
                 [
                   "Protected transactions funded",
                   result.activity?.protectedTransactionsFunded ??
                     result.metrics.protectedTransactionsFunded ??
                     result.metrics.escrowsFunded
                 ],
-                ["Deliveries submitted", result.activity?.deliveriesSubmitted ?? 0],
+                ["Deliverables submitted", result.activity?.deliveriesSubmitted ?? 0],
                 ["Funds released", result.activity?.fundsReleased ?? result.metrics.fundsReleased],
                 ["Unique counterparties", result.activity?.uniqueCounterparties ?? 0],
                 [

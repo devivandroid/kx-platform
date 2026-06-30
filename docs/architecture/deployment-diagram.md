@@ -12,6 +12,7 @@ flowchart TB
   subgraph fly["Fly.io"]
     nextApp["Next.js App"]
     apiRoutes["Next.js API Routes"]
+    trustServices["KX Trust Services"]
     riskEngine["Risk Intelligence Engine"]
   end
 
@@ -23,9 +24,10 @@ flowchart TB
   browser -->|"HTTPS"| nextApp
   browser -->|"wallet connection"| wallet
   nextApp -->|"REST JSON"| apiRoutes
-  apiRoutes -->|"in-process calls"| riskEngine
+  apiRoutes -->|"in-process calls"| trustServices
+  trustServices -->|"risk and identity estimation"| riskEngine
   riskEngine -->|"risk events and network snapshots"| postgres
-  apiRoutes -. "planned resource and delivery storage" .-> ipfs
+  apiRoutes -. "planned resource and deliverable storage" .-> ipfs
   wallet -->|"signed transactions"| arc
   apiRoutes -->|"transaction receipt verification"| arc
   arc -->|"USDC settlement"| usdc
@@ -37,9 +39,10 @@ flowchart TB
 - **MetaMask**: wallet used for Arc Testnet interaction and USDC transactions.
 - **Fly.io**: hosting platform for the Next.js runtime.
 - **Next.js App**: App Router frontend rendered by the deployed application.
-- **Next.js API Routes**: REST JSON endpoints for resources, requests, Agent API and Risk Intelligence.
+- **Next.js API Routes**: REST JSON endpoints for resources, Jobs, Agent API and Risk Intelligence.
+- **KX Trust Services**: service layer over Arc-compatible Jobs for Risk Intelligence and Human / Agent Estimation.
 - **Risk Intelligence Engine**: server-side risk profile and Risk Guard logic.
-- **PostgreSQL**: durable database for marketplace records, request drafts, receipts, ratings, risk events and network snapshots.
-- **IPFS**: planned durable storage for resource payloads and delivery artifacts.
+- **PostgreSQL**: durable database for marketplace records, Job drafts, receipts, ratings, risk events and network snapshots.
+- **IPFS**: planned durable storage for resource payloads and deliverable artifacts.
 - **Arc Testnet**: EVM-compatible network for transaction proofs and settlement.
 - **USDC**: payment asset used across marketplace and protected transaction workflows.

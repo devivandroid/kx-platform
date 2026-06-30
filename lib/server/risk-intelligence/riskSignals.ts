@@ -59,7 +59,9 @@ export function toRiskProfile(summary: ReputationSummary): RiskProfile {
       userType: summary.userType ?? "unknown",
       entityType: summary.entityType ?? "unknown",
       name: summary.participantName || undefined,
-      operatorAddress: summary.operatorAddress || undefined
+      operatorAddress: summary.operatorAddress || undefined,
+      arcIdentityId: summary.arcIdentityId || undefined,
+      identitySource: summary.identitySource ?? "self_declared"
     },
     scores: {
       financialBehaviorScore: isNoData ? null : summary.reputationScore,

@@ -79,6 +79,14 @@ Threshold helpers return `false` for no-data profiles because there is no numeri
 Arc Network reads use indexed data by default when a snapshot is less than 1 minute old. Pass
 `{ useIndexedData: false }` to force a fresh Arc Network refresh for the requested wallet.
 
+Risk profile responses may include `identityEstimation`, a Human / Agent behavioral estimation
+based only on Arc Network activity. It uses the latest 50 wallet transactions needed for
+estimation, keeps declared `userType` separate from `estimatedUserType`, includes
+`identityMatch`, and returns explainable timing, gas-fee and counterparty signals. Transaction
+samples are replaced on each fresh reindex and are not accumulated as long-term behavioral
+history. This is estimation, not identity verification, KYC, AML, compliance screening or bot
+detection certainty.
+
 `listParticipants` supports:
 
 - `limit`
@@ -138,6 +146,20 @@ activity returns:
 
 No data is not high risk. Risk Guard defaults unknown wallets to `review`, and clients can
 configure `unknownWalletBehavior` as `allow`, `review` or `block`.
+
+### Arc Reputation And Validations
+
+Risk profile, summary and signal responses may include `arcReputation` and `arcValidations`
+when the KX deployment is configured with official Arc registry addresses, official ABI JSON
+and official read methods.
+
+KX does not bundle invented ReputationRegistry or ValidationRegistry ABIs. If those registry
+settings are missing, the fields return a clear `not_configured`, `abi_unavailable` or
+`method_unavailable` status instead of guessing.
+
+KX ratings remain separate as KX Commercial Rating. Arc Reputation and Arc Validations are
+registry-sourced evidence and should not be interpreted as KYC, AML or compliance screening
+unless the registry data explicitly provides that meaning.
 
 ```ts
 const decision = await client.evaluateTransactionRisk(wallet, {

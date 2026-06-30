@@ -9,6 +9,7 @@ import { PageHeader } from "@/components/PageHeader";
 import { PageShell } from "@/components/PageShell";
 import { TransactionStatus, type TransactionState } from "@/components/TransactionStatus";
 import { useWallet } from "@/hooks/useWallet";
+import { getIdentitySource, getIdentitySourceLabel } from "@/lib/arcNative";
 import { createLocalResourceId } from "@/lib/localResources";
 import { getLegacyParticipantType, isEntityType, isUserType } from "@/lib/participants";
 import { isValidUsdcAmount } from "@/lib/validateUsdcAmount";
@@ -49,7 +50,8 @@ export default function PublishResourcePage() {
       entityType: "INDIVIDUAL",
       participantType: "human",
       participantName: "",
-      operatorAddress: ""
+      operatorAddress: "",
+      arcIdentityId: ""
     }
   });
   const selectedUserType = watch("userType");
@@ -159,6 +161,8 @@ export default function PublishResourcePage() {
         ),
         participantName: values.participantName.trim() || undefined,
         operatorAddress: operatorAddress || undefined,
+        arcIdentityId: values.arcIdentityId.trim() || undefined,
+        identitySource: getIdentitySource(values.arcIdentityId.trim() || undefined),
         sellerAddress,
         lockedContentURI: values.lockedContent.trim() || "local://browser-only-resource",
         previewText: values.previewText.trim() || values.description.trim(),
@@ -338,6 +342,19 @@ export default function PublishResourcePage() {
           />
           <span className="text-xs leading-5 text-slate-500">
             Self-declared metadata only. This does not verify identity or wallet ownership.
+          </span>
+        </label>
+
+        <label className="grid min-w-0 gap-2 lg:col-span-2">
+          <span className="text-sm font-medium text-slate-200">Arc Identity ID (optional)</span>
+          <input
+            {...register("arcIdentityId")}
+            className="w-full min-w-0 rounded-lg border border-arc-border bg-black/30 px-4 py-3 text-white outline-none transition placeholder:text-slate-600 focus:border-arc-blue"
+            placeholder="Arc Identity reference, if available"
+          />
+          <span className="text-xs leading-5 text-slate-500">
+            Identity Source:{" "}
+            {getIdentitySourceLabel(getIdentitySource(watch("arcIdentityId") || undefined))}.
           </span>
         </label>
 

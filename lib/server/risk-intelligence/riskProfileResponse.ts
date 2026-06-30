@@ -26,13 +26,17 @@ export function toRiskProfileApiResponse(profile: RiskProfile) {
       userType: profile.participant.userType ?? "unknown",
       entityType: profile.participant.entityType ?? "unknown",
       name: profile.participant.name ?? null,
-      operatorAddress: profile.participant.operatorAddress ?? null
+      operatorAddress: profile.participant.operatorAddress ?? null,
+      arcIdentityId: profile.participant.arcIdentityId ?? null,
+      identitySource: profile.participant.identitySource ?? "self_declared"
     },
     userType: profile.participant.userType ?? null,
     entityType: profile.participant.entityType ?? null,
     participantType: profile.participant.type,
     participantName: profile.participant.name ?? null,
     operatorAddress: profile.participant.operatorAddress ?? null,
+    arcIdentityId: profile.participant.arcIdentityId ?? null,
+    identitySource: profile.participant.identitySource ?? "self_declared",
     scores: profile.scores,
     reputationScore: profile.scores.financialBehaviorScore,
     financialRiskScore: profile.scores.riskScore,
@@ -40,6 +44,9 @@ export function toRiskProfileApiResponse(profile: RiskProfile) {
     confidenceLevel: profile.scores.confidenceLevel,
     activity: profile.activity,
     metadata: profile.metadata,
+    identityEstimation: profile.identityEstimation,
+    arcReputation: profile.arcReputation,
+    arcValidations: profile.arcValidations,
     metrics: {
       totalVolumeUSDC: profile.activity.totalCompletedVolumeUSDC,
       totalCompletedVolumeUSDC: profile.activity.totalCompletedVolumeUSDC,

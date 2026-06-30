@@ -16,6 +16,7 @@ import type { EscrowTask } from "@/lib/contracts/microWorkEscrow";
 
 type PublicRequestDraft = {
   id: string;
+  arcJobId?: string | null;
   title: string;
   description: string;
   requirements: string;
@@ -24,7 +25,9 @@ type PublicRequestDraft = {
   requesterAddress: string;
   participantType?: string;
   participantName?: string;
+  identitySource?: string;
   resourceType?: string;
+  settlement?: string;
   status: string;
   agentConsumable: boolean;
 };
@@ -107,9 +110,9 @@ export default function RequestsPage() {
   return (
     <PageShell>
       <PageHeader
-        eyebrow="Open Requests"
-        title="Requests"
-        description="Custom knowledge work secured by USDC escrow. Request specialized deliverables from developers, researchers and AI-native service providers."
+        eyebrow="Arc Compatible Jobs"
+        title="Jobs"
+        description="Custom commerce opportunities for deliverables, protected settlement and Arc-native identity context."
       />
 
       <div className="mb-4 flex justify-end">
@@ -132,22 +135,22 @@ export default function RequestsPage() {
 
       <div className="mb-5 flex flex-col gap-3 rounded-lg border border-arc-border bg-arc-panel/80 p-5 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <p className="text-sm font-semibold text-white">Create a custom knowledge request</p>
+          <p className="text-sm font-semibold text-white">Create a custom Job</p>
           <p className="mt-1 text-sm leading-6 text-slate-400">
-            Create a custom knowledge request and fund it with USDC escrow.
+            Define the deliverable, participant identity context and settlement budget.
           </p>
         </div>
         <Link
           href="/requests/new"
           className="inline-flex rounded-lg bg-arc-blue px-4 py-2 text-center text-sm font-semibold text-arc-ink hover:bg-white"
         >
-          Create Request
+          Create Job
         </Link>
       </div>
 
       {!isEscrowConfigured ? (
         <div className="rounded-lg border border-amber-300/40 bg-amber-300/10 p-4 text-sm text-amber-100">
-          Escrow contract is not configured. Deploy the contract and set{" "}
+          Protected settlement contract is not configured. Deploy the contract and set{" "}
           <span className="font-semibold">NEXT_PUBLIC_ESCROW_CONTRACT</span>.
         </div>
       ) : null}
@@ -155,27 +158,27 @@ export default function RequestsPage() {
       {taskCountQuery.isLoading || requestsQuery.isLoading ? (
         <div className="flex items-center gap-3 rounded-lg border border-arc-border bg-arc-panel/80 p-6 text-sm text-slate-400">
           <LoadingSpinner />
-          Loading requests from Arc Testnet...
+          Loading Jobs from Arc Testnet...
         </div>
       ) : null}
 
       {taskCountQuery.error || requestsQuery.error ? (
         <div className="rounded-lg border border-red-400/40 bg-red-400/10 p-4 text-sm text-red-100">
-          Unable to load requests. Check RPC, network, and contract address.
+          Unable to load Jobs. Check RPC, network, and contract address.
         </div>
       ) : null}
 
       {requestsQuery.data && filteredVisibleRequests.length === 0 && filteredApiRequests.length === 0 ? (
         <div className="rounded-lg border border-dashed border-arc-border bg-arc-panel/80 p-6">
-          <p className="text-sm font-semibold text-white">No matching requests yet</p>
+          <p className="text-sm font-semibold text-white">No matching Jobs yet</p>
           <p className="mt-2 max-w-xl text-sm leading-6 text-slate-400">
-            Try another resource type or create the first matching request.
+            Try another resource type or create the first matching Job.
           </p>
           <Link
             href="/requests/new"
             className="mt-4 inline-flex rounded-lg bg-arc-blue px-4 py-2 text-sm font-semibold text-arc-ink"
           >
-            Create Request
+            Create Job
           </Link>
         </div>
       ) : null}
@@ -184,9 +187,9 @@ export default function RequestsPage() {
         <section className="mb-5">
           <div className="mb-3 flex items-end justify-between gap-3">
             <div>
-              <p className="text-sm font-semibold text-white">Public request drafts</p>
+              <p className="text-sm font-semibold text-white">Public Job drafts</p>
               <p className="mt-1 text-sm text-slate-500">
-                Shared request opportunities served from the public API catalog.
+                Shared Arc-compatible Job opportunities served from the public API catalog.
               </p>
             </div>
           </div>
@@ -215,6 +218,10 @@ export default function RequestsPage() {
                   <span>{getApiResourceType(request)}</span>
                   <span>{request.license}</span>
                   {request.participantName ? <span>{request.participantName}</span> : null}
+                  <span>
+                    {request.identitySource === "arc_identity" ? "Arc Identity" : "Self-declared"}
+                  </span>
+                  <span>Arc Native</span>
                 </div>
               </article>
             ))}

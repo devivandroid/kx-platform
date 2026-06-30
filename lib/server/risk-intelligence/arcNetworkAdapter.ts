@@ -8,6 +8,7 @@ import {
   indexArcNetworkSnapshot,
   type ArcNetworkIndexOptions
 } from "@/lib/server/risk-intelligence/arcNetworkIndexer";
+import { estimateWalletIdentityFromArcNetwork } from "@/lib/server/risk-intelligence/identityEstimation";
 import type { RiskProfile } from "@/lib/server/risk-intelligence/types";
 
 const rpcUrl = process.env.NEXT_PUBLIC_RPC_URL || ARC_TESTNET_RPC_URL;
@@ -88,6 +89,11 @@ export async function getArcNetworkRiskProfile(
 ): Promise<RiskProfile> {
   try {
     const snapshot = await indexArcNetworkSnapshot(wallet, options);
+    const identityEstimation = await estimateWalletIdentityFromArcNetwork(snapshot.wallet, {
+      ...options,
+      useIndexedData: true,
+      declaredUserType: "unknown"
+    });
     const arcscanStats = snapshot.arcscanStats ?? null;
     const networkTransactions =
       arcscanStats?.transactionsCount ?? snapshot.usdcTransferTransactions;
@@ -168,6 +174,7 @@ export async function getArcNetworkRiskProfile(
           cacheSource: snapshot.cacheSource,
           coverage
         },
+        identityEstimation,
         behavioralSignals: [
           {
             label: "Data freshness",
@@ -298,6 +305,7 @@ export async function getArcNetworkRiskProfile(
             "Windowed on-demand index. This is not full Arc Testnet historical coverage yet."
         }
       },
+      identityEstimation,
       behavioralSignals: [],
       riskSignals: [
         {

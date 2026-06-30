@@ -19,4 +19,5 @@ export type PublishResourceFormValues = {
   participantType: string;
   participantName: string;
   operatorAddress: string;
+  arcIdentityId: string;
 };

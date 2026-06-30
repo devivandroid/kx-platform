@@ -1,5 +1,8 @@
 import { isAddress } from "ethers";
 import { NextResponse, type NextRequest } from "next/server";
+import { getIdentitySource, normalizeArcIdentityId } from "@/lib/arcNative";
+import { resolveArcIdentity } from "@/lib/server/arc/arcIdentity";
+import { readArcJob } from "@/lib/server/arc/arcJobs";
 import {
   getEntityTypeFromLegacy,
   getLegacyParticipantType,
@@ -85,6 +88,18 @@ export async function POST(request: NextRequest) {
     typeof body.operatorAddress === "string" && body.operatorAddress.trim()
       ? body.operatorAddress.trim()
       : undefined;
+  const providedArcIdentityId = normalizeArcIdentityId(body.arcIdentityId);
+  const resolvedIdentity = providedArcIdentityId
+    ? {
+        arcIdentityId: providedArcIdentityId,
+        identitySource: getIdentitySource(providedArcIdentityId),
+        status: "found" as const
+      }
+    : await resolveArcIdentity(requesterAddress);
+  const arcIdentityId = resolvedIdentity.arcIdentityId;
+  const identitySource = resolvedIdentity.identitySource;
+  const providedArcJobId = typeof body.arcJobId === "string" ? body.arcJobId.trim() : undefined;
+  const officialArcJob = await readArcJob(providedArcJobId);
 
   const draft = await createServerRequestAsync({
     title: String(body.title),
@@ -100,6 +115,9 @@ export async function POST(request: NextRequest) {
     participantType: participantType ?? getLegacyParticipantType(userType),
     participantName,
     operatorAddress,
+    arcIdentityId,
+    identitySource,
+    arcJobId: providedArcJobId,
     resourceType: isResourceType(body.resourceType) ? body.resourceType : "Custom Service",
     agentConsumable: Boolean(body.agentConsumable)
   });
@@ -115,15 +133,27 @@ export async function POST(request: NextRequest) {
       entityType,
       participantType: draft.participantType ?? null,
       participantName: participantName ?? null,
-      operatorAddress: operatorAddress ?? null
+      operatorAddress: operatorAddress ?? null,
+      arcIdentityId: arcIdentityId ?? null,
+      identitySource,
+      arcIdentityStatus: resolvedIdentity.status,
+      arcJobId: draft.arcJobId ?? null
     }
   });
 
   return NextResponse.json(
     {
       request: draft,
+      job: {
+        id: draft.id,
+        arcJobId: draft.arcJobId,
+        arcJobRegistryStatus: officialArcJob.status,
+        settlement: "protected_usdc_settlement",
+        identitySource: draft.identitySource,
+        arcIdentityId: draft.arcIdentityId ?? null
+      },
       fundingInstructions:
-        "This API creates a server-side request draft only. A human can fund a request through the UI escrow flow at /publish-resource.",
+        "This API creates a server-side Job draft only. A human can fund settlement through the UI protected transaction flow at /requests/new.",
       roadmap:
         "Fully on-chain request creation by agents requires secure agent wallet integration. This API never signs blockchain transactions server-side."
     },

@@ -60,7 +60,7 @@ export default async function ReputationPage() {
           ["Wallets tracked", profiles.length],
           ["Total volume", `${totalVolume.toFixed(2)} USDC`],
           ["Verified payments", verifiedPayments],
-          ["Completed escrows", completedEscrows]
+          ["Completed settlements", completedEscrows]
         ].map(([label, value]) => (
           <div key={label} className="rounded-lg border border-arc-border bg-arc-panel/80 p-4">
             <p className="text-sm text-slate-500">{label}</p>
@@ -156,7 +156,7 @@ export default async function ReputationPage() {
           <h2 className="text-xl font-semibold text-white">Methodology</h2>
           <p className="mt-3 text-sm leading-6 text-slate-400">
             The financial behavior score starts at 500 and moves up for successful payments,
-            verified payments, downloads, funded escrows, submitted deliveries, released funds,
+            verified payments, downloads, funded settlements, submitted deliverables, released funds,
             consistent activity, counterparty diversity and completed volume. The preview model
             reduces score for request cancellations and purchase starts without completion.
           </p>

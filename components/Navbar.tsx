@@ -9,7 +9,7 @@ const navItems = [
   { label: "Home", href: "/" },
   { label: "Marketplace", href: "/marketplace" },
   { label: "Publish Resource", href: "/publish-resource" },
-  { label: "Requests", href: "/requests" },
+  { label: "Jobs", href: "/requests" },
   { label: "My Activity", href: "/my-activity" },
   { label: "Risk Intelligence", href: "/reputation" },
   { label: "Agent API", href: "/agent-api" },

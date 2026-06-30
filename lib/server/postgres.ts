@@ -54,6 +54,7 @@ export async function ensurePostgresSchema(): Promise<void> {
 
         CREATE TABLE IF NOT EXISTS requests (
           id TEXT PRIMARY KEY,
+          arc_job_id TEXT,
           data JSONB NOT NULL,
           created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
           updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
@@ -85,6 +86,8 @@ export async function ensurePostgresSchema(): Promise<void> {
           participant_type TEXT,
           participant_name TEXT,
           operator_address TEXT,
+          arc_identity_id TEXT,
+          identity_source TEXT,
           data JSONB NOT NULL DEFAULT '{}'::jsonb,
           updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
         );
@@ -121,6 +124,18 @@ export async function ensurePostgresSchema(): Promise<void> {
           updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
         );
 
+        CREATE TABLE IF NOT EXISTS wallet_identity_estimations (
+          wallet_address TEXT PRIMARY KEY,
+          data JSONB NOT NULL,
+          updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        );
+
+        CREATE TABLE IF NOT EXISTS wallet_transaction_samples (
+          wallet_address TEXT PRIMARY KEY,
+          data JSONB NOT NULL,
+          updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        );
+
         CREATE INDEX IF NOT EXISTS resources_created_at_idx ON resources (created_at DESC);
         CREATE INDEX IF NOT EXISTS requests_created_at_idx ON requests (created_at DESC);
         CREATE INDEX IF NOT EXISTS risk_events_wallet_idx ON risk_events (LOWER(wallet_address));
@@ -128,10 +143,16 @@ export async function ensurePostgresSchema(): Promise<void> {
         CREATE INDEX IF NOT EXISTS resource_ratings_resource_idx ON resource_ratings (resource_id);
         CREATE INDEX IF NOT EXISTS resource_files_resource_idx ON resource_files (resource_id);
         CREATE INDEX IF NOT EXISTS arc_network_snapshots_updated_idx ON arc_network_snapshots (updated_at DESC);
+        CREATE INDEX IF NOT EXISTS wallet_identity_estimations_updated_idx ON wallet_identity_estimations (updated_at DESC);
+        CREATE INDEX IF NOT EXISTS wallet_transaction_samples_updated_idx ON wallet_transaction_samples (updated_at DESC);
       `);
       await pool.query(`
         ALTER TABLE participants ADD COLUMN IF NOT EXISTS user_type TEXT;
         ALTER TABLE participants ADD COLUMN IF NOT EXISTS entity_type TEXT;
+        ALTER TABLE participants ADD COLUMN IF NOT EXISTS arc_identity_id TEXT;
+        ALTER TABLE participants ADD COLUMN IF NOT EXISTS identity_source TEXT;
+        ALTER TABLE requests ADD COLUMN IF NOT EXISTS arc_job_id TEXT;
+        CREATE INDEX IF NOT EXISTS requests_arc_job_id_idx ON requests (arc_job_id);
       `);
     })();
   }
@@ -155,6 +176,8 @@ export async function upsertParticipant(input: {
   entityType?: string | null;
   participantName?: string | null;
   operatorAddress?: string | null;
+  arcIdentityId?: string | null;
+  identitySource?: string | null;
   data?: Record<string, unknown>;
 }): Promise<void> {
   if (!isPostgresEnabled() || !input.walletAddress) return;
@@ -168,16 +191,20 @@ export async function upsertParticipant(input: {
         participant_type,
         participant_name,
         operator_address,
+        arc_identity_id,
+        identity_source,
         data,
         updated_at
       )
-      VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb, NOW())
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9::jsonb, NOW())
       ON CONFLICT (wallet_address) DO UPDATE SET
         user_type = COALESCE(EXCLUDED.user_type, participants.user_type),
         entity_type = COALESCE(EXCLUDED.entity_type, participants.entity_type),
         participant_type = COALESCE(EXCLUDED.participant_type, participants.participant_type),
         participant_name = COALESCE(EXCLUDED.participant_name, participants.participant_name),
         operator_address = COALESCE(EXCLUDED.operator_address, participants.operator_address),
+        arc_identity_id = COALESCE(EXCLUDED.arc_identity_id, participants.arc_identity_id),
+        identity_source = COALESCE(EXCLUDED.identity_source, participants.identity_source),
         data = participants.data || EXCLUDED.data,
         updated_at = NOW()
     `,
@@ -188,6 +215,8 @@ export async function upsertParticipant(input: {
       input.participantType ?? null,
       input.participantName ?? null,
       input.operatorAddress ?? null,
+      input.arcIdentityId ?? null,
+      input.identitySource ?? null,
       JSON.stringify(input.data ?? {})
     ]
   );

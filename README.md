@@ -6,13 +6,13 @@
 
 KX, formerly Knowledge Exchange, is now positioned as **KX Platform**.
 
-**Human & Agent Commerce Platform**
+**Marketplace & Trust Layer for the Arc Agent Economy**
 
 **The programmable trust & commerce layer for humans, autonomous agents and organizations.**
 
-KX Platform is a commerce platform that enables participants to securely exchange services, knowledge and work using USDC.
+KX Platform is an Arc-compatible commerce platform that enables participants to securely exchange services, knowledge and work using USDC.
 
-Discover resources, protect transactions, evaluate participant risk, integrate programmable commerce APIs and build trusted workflows with the KX SDK.
+Discover resources, create Jobs, protect settlement, evaluate participant risk, integrate programmable commerce APIs and build trusted workflows with the KX SDK.
 
 KX is an independent project built on Arc Testnet and uses USDC for programmable payments. This project is not affiliated with, endorsed by, or officially supported by Circle or Arc.
 
@@ -20,7 +20,7 @@ KX is an independent project built on Arc Testnet and uses USDC for programmable
 
 ## Architecture
 
-KX is organized as a layered commerce platform with reusable Risk Intelligence services.
+KX is organized as a layered commerce platform with reusable KX Trust Services over Arc-compatible Jobs.
 
 - [System Context Diagram](docs/architecture/system-context.md)
 - [Component Diagram](docs/architecture/component-diagram.md)
@@ -31,10 +31,16 @@ KX is organized as a layered commerce platform with reusable Risk Intelligence s
 flowchart TB
   subgraph web["KX Web Application"]
     marketplace["Marketplace"]
-    requests["Requests"]
+    jobs["Jobs"]
     protected["Protected Transactions"]
     activity["My Activity"]
     agentApi["Agent API"]
+  end
+
+  subgraph trust["KX Trust Services"]
+    riskSvc["Risk Intelligence"]
+    identitySvc["Human / Agent Estimation"]
+    futureSvc["Reputation\nFraud Signals\nCompliance adapters"]
   end
 
   subgraph risk["Risk Intelligence Engine"]
@@ -55,7 +61,7 @@ flowchart TB
   usdc["USDC"]
 
   marketplace -->|"resource views, purchases, downloads"| data
-  requests -->|"request events and delivery events"| data
+  jobs -->|"Job and deliverable events"| data
   protected -->|"funding and release events"| data
   activity -->|"participant history"| data
   agentApi -->|"HTTP 402 commerce events"| data
@@ -65,13 +71,14 @@ flowchart TB
   features --> signals
   scoring --> guard
   signals --> guard
+  trust --> risk
 
   risk --> publicApis
   publicApis --> sdk
   sdk --> sdkMethods
 
   protected -->|"settlement"| arc
-  marketplace -->|"direct ERC-20 transfers"| usdc
+  marketplace -->|"direct USDC transfers"| usdc
   protected -->|"USDC protected settlement"| usdc
   usdc --> arc
 
@@ -80,11 +87,37 @@ flowchart TB
   requests -. "future delivery artifacts" .-> ipfs
 ```
 
+## Arc Native Compatibility
+
+KX uses Arc-native language in the product surface:
+
+- **Jobs**: custom work opportunities mapped internally to Arc-compatible Job metadata.
+- **Deliverables**: provider submissions attached to Jobs.
+- **Settlement**: protected USDC payment state for custom work.
+- **Identity**: Arc Identity is preferred when an `arcIdentityId` exists; otherwise KX displays self-declared identity metadata.
+
+Advanced implementation details such as ERC-8004 identity references and ERC-8183 Job mapping are reserved for technical documentation and API metadata. KX does not replace Arc standards; it adds marketplace, trust services, public APIs and SDK layers on top.
+
+Native Arc integration is configuration-driven:
+
+- `ARC_IDENTITY_REGISTRY_ADDRESS`: optional official Arc Identity Registry address. When configured, KX reads the registry for a participant wallet and uses Arc Identity as the primary identity when found.
+- `ARC_JOB_REGISTRY_ADDRESS`: optional official Arc Job Registry address. When configured, KX can read official Arc Job records for provided `arcJobId` values.
+- `ARC_REPUTATION_REGISTRY_ADDRESS`: optional official Arc Reputation Registry address.
+- `ARC_REPUTATION_REGISTRY_ABI_JSON` and `ARC_REPUTATION_REGISTRY_METHOD`: optional official ABI JSON and read method for Arc Reputation consumption.
+- `ARC_VALIDATION_REGISTRY_ADDRESS`: optional official Arc Validation Registry address.
+- `ARC_VALIDATION_REGISTRY_ABI_JSON` and `ARC_VALIDATION_REGISTRY_METHOD`: optional official ABI JSON and read method for Arc Validation consumption.
+
+If the official registry addresses are not configured or no record exists, KX preserves the current self-declared identity, protected settlement workflow and KX Commercial Rating. KX does not create custom replacements for Arc Identity, Arc Jobs, Arc Reputation or Arc Validations.
+
+## KX Trust Services
+
+KX Trust Services are reusable services over Arc-compatible Jobs. Current services include Risk Intelligence, Human / Agent Estimation, KX Commercial Rating, and optional consumption of Arc Reputation and Arc Validations when official registry configuration is provided. KX keeps Arc Reputation separate from KX Commercial Rating and does not claim KYC, AML or compliance coverage unless registry data explicitly provides that meaning.
+
 ## Live Demo
 
 [https://kx-platform.fly.dev](https://kx-platform.fly.dev/)
 
-Try Commerce Marketplace resources, downloadable datasets, protected request workflows, HTTP 402 Agent API flows and Risk Intelligence endpoints.
+Try Commerce Marketplace resources, downloadable datasets, protected Job workflows, HTTP 402 Agent API flows and Risk Intelligence endpoints.
 
 ## Screenshots
 
@@ -600,6 +633,17 @@ set `useIndexedData=false` to force a fresh Arc Network refresh. The
 `/api/risk/signals/:wallet` endpoint returns behavioral and risk signals only. Existing
 `/api/reputation/*` endpoints remain available as backward-compatible aliases.
 
+Risk profiles may also include `identityEstimation`, an optional Human / Agent behavioral
+estimation based only on Arc Network activity. It indexes the latest 50 wallet transactions needed
+for estimation, stores only required transaction fields, and replaces the prior sample on each
+fresh reindex instead of accumulating historical samples. It returns `Likely Human`,
+`Likely Agent` or `Unknown`, probability, confidence, Arc Network evidence source, declared user
+type when provided, identity match status, and explainable signals such as transaction frequency,
+timing variance, activity consistency, gas fee regularity, counterparty diversity and network
+coverage. This is estimation, not identity verification, KYC, AML, compliance screening or bot
+detection certainty. The estimation and transaction sample are cached in PostgreSQL by wallet when
+`DATABASE_URL` is configured.
+
 ## KX SDK
 
 Builders can use the repository-local TypeScript SDK in `lib/sdk/kx/` to consume
@@ -772,6 +816,8 @@ Tables created automatically on first server access:
 - `risk_events`: KX activity events consumed by Risk Intelligence.
 - `participants`: wallet, agent, human and organization metadata derived from resources, requests and events.
 - `arc_network_snapshots`: cached Arc Network activity snapshots for Risk Intelligence.
+- `wallet_identity_estimations`: cached Human / Agent behavioral estimations by wallet.
+- `wallet_transaction_samples`: latest 50 transaction samples used for identity estimation; replaced on fresh reindex.
 
 The same schema is versioned under `supabase/migrations/`.
 
@@ -791,6 +837,17 @@ Seed behavior:
 - Participant metadata is upserted from resource sellers, request participants and risk events.
 
 Without `DATABASE_URL`, the app keeps using in-memory preview storage so local development and CI remain simple. Without Supabase Storage variables, downloadable file uploads fall back to local filesystem storage for development only.
+
+## Arc Reputation And Validations
+
+KX can consume official Arc Reputation and Arc Validation registries when the deployment provides the registry address, official ABI JSON and official read method through environment variables. The app intentionally does not bundle invented registry ABIs or guess method names.
+
+When configured, Risk Intelligence responses include:
+
+- `arcReputation`: Arc registry reputation entries for the participant wallet.
+- `arcValidations`: Arc registry validation entries, tags or statuses for the participant wallet.
+
+KX ratings remain separate as **KX Commercial Rating**. Arc Reputation and Arc Validations are displayed as registry-sourced evidence, while KX Commercial Rating reflects marketplace purchase/rating activity inside KX.
 
 ## MVP Limitations
 

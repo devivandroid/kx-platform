@@ -26,7 +26,7 @@ const walkthroughFlows = [
       "The agent calls /api/agent-capabilities to discover supported workflows.",
       "The agent requests a protected resource.",
       "The API responds with HTTP 402 Payment Required and payment instructions.",
-      "The agent pays the seller with ERC-20 USDC on Arc Testnet.",
+      "The agent pays the seller with USDC on Arc Testnet.",
       "The agent submits txHash and buyerAddress for verification.",
       "The agent retries the resource request with proof and receives a structured payload or file download URLs."
     ],
@@ -47,21 +47,21 @@ const walkthroughFlows = [
       "Builders get explainable Risk Intelligence without claiming official Arc-wide scoring."
   },
   {
-    title: "Requests",
+    title: "Jobs",
     description:
-      "A requester funds custom work in escrow, a provider submits delivery, and payment is released after approval.",
+      "A buyer funds custom work with protected settlement, a provider submits a deliverable, and payment is released after approval.",
     steps: [
-      "Open Requests and click Create Request.",
+      "Open Jobs and click Create Job.",
       "Create a request with scope, license, budget, and optional deadline.",
       "Land on the new request detail page.",
       "Approve USDC if needed and click Fund Escrow.",
       "A provider applies to the request.",
-      "The requester assigns the provider.",
-      "The assigned provider submits delivery notes or links.",
-      "The requester reviews the delivery and releases payment.",
+      "The buyer assigns the provider.",
+      "The assigned provider submits deliverable notes or links.",
+      "The buyer reviews the deliverable and releases settlement.",
       "The final transaction can be verified in ArcScan."
     ],
-    outcome: "The escrow lifecycle finishes on-chain after requester approval."
+    outcome: "The protected settlement lifecycle finishes on-chain after buyer approval."
   }
 ];
 
@@ -71,7 +71,7 @@ export default function DemoPage() {
       <PageHeader
         eyebrow="Product walkthrough"
         title="Three ways to exchange knowledge"
-        description="Walk through Instant Access, HTTP 402 Agent Flow, and Requests using Arc Testnet USDC escrow."
+        description="Walk through Instant Access, HTTP 402 Agent Flow, and Jobs using Arc Testnet USDC settlement."
       />
 
       <section className="grid gap-5 lg:grid-cols-[1fr_20rem]">
@@ -122,13 +122,13 @@ export default function DemoPage() {
               href="/requests/new"
               className="rounded-lg border border-arc-border bg-white/5 px-4 py-3 text-center text-sm font-semibold text-white"
             >
-              Create Request
+              Create Job
             </Link>
             <Link
               href="/requests"
               className="rounded-lg border border-arc-border bg-white/5 px-4 py-3 text-center text-sm font-semibold text-white"
             >
-              Requests
+              Jobs
             </Link>
             <a
               href={arcExplorerUrl}

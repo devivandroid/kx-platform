@@ -36,9 +36,9 @@ const client = new KXClient({
 | Retrieve unlocked resource content | `GET /api/resources/:id?txHash=...&buyerAddress=...` | `getUnlockedResource()` |
 | View resource ratings | `GET /api/resources/:id/ratings` | `getResourceRatings()` |
 | Rate a purchased resource | `POST /api/resources/:id/ratings` | `rateResource()` |
-| Browse Requests | `GET /api/requests/search` | `searchRequests()` |
-| Create a Request draft | `POST /api/requests/create` | `createRequest()` |
-| Submit delivery metadata for a Request | `POST /api/requests/:id/submit` | `submitRequestDelivery()` |
+| Browse Jobs | `GET /api/requests/search` | `searchRequests()` |
+| Create a Job draft | `POST /api/requests/create` | `createRequest()` |
+| Submit deliverable metadata for a Job | `POST /api/requests/:id/submit` | `submitRequestDelivery()` |
 | Query full Risk Intelligence profile | `GET /api/risk/profile/:wallet` | `getRiskProfile()` |
 | Query Arc Network risk profile | `GET /api/risk/network/:wallet` | `getNetworkProfile()` |
 | Query combined risk profile | `GET /api/risk/profile/:wallet?source=combined` | `getCombinedProfile()` |
@@ -70,7 +70,7 @@ const unlocked = await client.getUnlockedResource(resourceId, {
 });
 ```
 
-## Requests And Deliveries
+## Jobs And Deliverables
 
 ```ts
 const created = await client.createRequest({
@@ -80,9 +80,11 @@ const created = await client.createRequest({
   budgetUSDC: "40.00",
   license: "Commercial Use Allowed",
   requesterAddress: "0x4444444444444444444444444444444444444444",
+  arcJobId: "optional-official-arc-job-id",
   userType: "HUMAN",
   entityType: "ORGANIZATION",
   participantName: "Operations AI Lab",
+  arcIdentityId: "optional-arc-identity-reference",
   agentConsumable: true
 });
 
@@ -91,12 +93,14 @@ await client.submitRequestDelivery(created.request.id, {
   providerUserType: "AGENT",
   providerEntityType: "INDIVIDUAL",
   providerParticipantName: "IntegrationAgent-01",
-  deliveryText: "Delivery notes, repository link and validation results."
+  providerArcIdentityId: "optional-provider-arc-identity-reference",
+  deliveryText: "Deliverable notes, repository link and validation results."
 });
 ```
 
-The API stores request and delivery metadata. Escrow funding and fund release still require wallet
-interaction with the protected transaction flow.
+The API stores Job and deliverable metadata. Protected settlement funding and release still require wallet
+interaction with the protected transaction flow. KX exposes `arcJobId`, `arcIdentityId` and
+`identitySource` when available while keeping older request fields compatible.
 Older clients may still send the legacy `participantType` and `providerParticipantType` aliases.
 
 ## Ratings

@@ -1,10 +1,15 @@
 import { ARC_TESTNET_CHAIN_ID } from "@/lib/chains/arcTestnet";
+import {
+  readArcReputation,
+  readArcValidations
+} from "@/lib/server/arc/arcTrustRegistries";
 import { getArcNetworkRiskProfile } from "@/lib/server/risk-intelligence/arcNetworkAdapter";
 import { calculateRiskProfile, getUniqueRiskWallets } from "@/lib/server/risk-intelligence/calculateRiskProfile";
 import { getEvents, getEventsAsync } from "@/lib/server/reputation/reputationEventStore";
 import { toRiskProfileApiResponse } from "@/lib/server/risk-intelligence/riskProfileResponse";
 import type {
   ConfidenceLevel,
+  IdentityMatchStatus,
   RiskDataSource,
   RiskGuardCheck,
   RiskGuardDecision,
@@ -41,10 +46,26 @@ export function getRiskProfile(wallet: string): RiskProfile {
 }
 
 export async function getRiskProfileAsync(wallet: string): Promise<RiskProfile> {
-  return {
+  return enrichWithArcRegistries(wallet, {
     ...calculateRiskProfile(wallet, await getEventsAsync()),
     dataSource: "knowledge_exchange",
     limitations: internalRiskServiceLimitations
+  });
+}
+
+async function enrichWithArcRegistries(
+  wallet: string,
+  profile: RiskProfile
+): Promise<RiskProfile> {
+  const [arcReputation, arcValidations] = await Promise.all([
+    readArcReputation(wallet),
+    readArcValidations(wallet)
+  ]);
+
+  return {
+    ...profile,
+    arcReputation,
+    arcValidations
   };
 }
 
@@ -142,6 +163,16 @@ function combineProfiles(internalProfile: RiskProfile, networkProfile: RiskProfi
       evidenceCount
     },
     metadata: networkProfile.metadata,
+    identityEstimation: networkProfile.identityEstimation
+      ? {
+          ...networkProfile.identityEstimation,
+          declaredUserType: internalProfile.participant.userType ?? "unknown",
+          identityMatch: getIdentityMatch(
+            internalProfile.participant.userType,
+            networkProfile.identityEstimation.estimatedUserType
+          )
+        }
+      : undefined,
     behavioralSignals: [
       ...internalProfile.behavioralSignals,
       ...networkProfile.behavioralSignals.map((signal) => ({
@@ -160,6 +191,19 @@ function combineProfiles(internalProfile: RiskProfile, networkProfile: RiskProfi
   };
 }
 
+function getIdentityMatch(
+  declaredUserType: RiskProfile["participant"]["userType"],
+  estimatedUserType: NonNullable<RiskProfile["identityEstimation"]>["estimatedUserType"]
+): IdentityMatchStatus {
+  if (!declaredUserType || declaredUserType === "unknown" || estimatedUserType === "Unknown") {
+    return "Not declared";
+  }
+
+  if (declaredUserType === "HUMAN" && estimatedUserType === "Likely Human") return "OK";
+  if (declaredUserType === "AGENT" && estimatedUserType === "Likely Agent") return "OK";
+  return "Mismatch";
+}
+
 export type RiskProfileReadOptions = {
   useIndexedData?: boolean;
 };
@@ -168,7 +212,7 @@ export async function getArcNetworkRiskProfileAsync(
   wallet: string,
   options: RiskProfileReadOptions = {}
 ): Promise<RiskProfile> {
-  return getArcNetworkRiskProfile(wallet, options);
+  return enrichWithArcRegistries(wallet, await getArcNetworkRiskProfile(wallet, options));
 }
 
 export async function getCombinedRiskProfileAsync(
@@ -180,7 +224,12 @@ export async function getCombinedRiskProfileAsync(
     getArcNetworkRiskProfileAsync(wallet, options)
   ]);
 
-  return combineProfiles(internalProfile, networkProfile);
+  const combined = combineProfiles(internalProfile, networkProfile);
+  return {
+    ...combined,
+    arcReputation: internalProfile.arcReputation,
+    arcValidations: internalProfile.arcValidations
+  };
 }
 
 export function getRiskProfiles(limit = 50): RiskProfile[] {
@@ -229,7 +278,9 @@ export function toRiskSummaryResponse(profile: RiskProfile) {
       userType: profile.participant.userType ?? "unknown",
       entityType: profile.participant.entityType ?? "unknown",
       name: profile.participant.name ?? null,
-      operatorAddress: profile.participant.operatorAddress ?? null
+      operatorAddress: profile.participant.operatorAddress ?? null,
+      arcIdentityId: profile.participant.arcIdentityId ?? null,
+      identitySource: profile.participant.identitySource ?? "self_declared"
     },
     summary: {
       financialBehaviorScore: profile.scores.financialBehaviorScore,
@@ -242,6 +293,9 @@ export function toRiskSummaryResponse(profile: RiskProfile) {
       lastActivity: profile.activity.lastActivity ?? null,
       evidenceCount: profile.activity.evidenceCount
     },
+    identityEstimation: profile.identityEstimation,
+    arcReputation: profile.arcReputation,
+    arcValidations: profile.arcValidations,
     limitations: riskServiceLimitations
   };
 }
@@ -258,6 +312,9 @@ export function toRiskSignalsResponse(profile: RiskProfile) {
     profileStatus: profile.profileStatus,
     message: profile.message,
     recommendation: profile.recommendation,
+    identityEstimation: profile.identityEstimation,
+    arcReputation: profile.arcReputation,
+    arcValidations: profile.arcValidations,
     behavioralSignals: profile.behavioralSignals,
     riskSignals: profile.riskSignals,
     limitations: riskServiceLimitations
@@ -466,7 +523,9 @@ export function evaluateRiskGuard(wallet: string, policy: RiskGuardPolicy = {}) 
         userType: profile.participant.userType ?? "unknown",
         entityType: profile.participant.entityType ?? "unknown",
         name: profile.participant.name ?? null,
-        operatorAddress: profile.participant.operatorAddress ?? null
+        operatorAddress: profile.participant.operatorAddress ?? null,
+        arcIdentityId: profile.participant.arcIdentityId ?? null,
+        identitySource: profile.participant.identitySource ?? "self_declared"
       }
     },
     checks,
@@ -555,7 +614,9 @@ export async function evaluateRiskGuardAsync(wallet: string, policy: RiskGuardPo
         userType: profile.participant.userType ?? "unknown",
         entityType: profile.participant.entityType ?? "unknown",
         name: profile.participant.name ?? null,
-        operatorAddress: profile.participant.operatorAddress ?? null
+        operatorAddress: profile.participant.operatorAddress ?? null,
+        arcIdentityId: profile.participant.arcIdentityId ?? null,
+        identitySource: profile.participant.identitySource ?? "self_declared"
       }
     },
     checks,

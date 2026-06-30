@@ -10,6 +10,8 @@ export type ParticipantMetadata = {
   participantType?: ParticipantType;
   participantName?: string;
   operatorAddress?: string;
+  arcIdentityId?: string;
+  identitySource?: "arc_identity" | "self_declared";
 };
 
 export type ResourceFile = {
@@ -66,6 +68,8 @@ export type InstantResource = {
   participantType?: ParticipantType;
   participantName?: string;
   operatorAddress?: string;
+  arcIdentityId?: string;
+  identitySource?: "arc_identity" | "self_declared";
   sellerAddress: string;
   deliveryType: DeliveryType;
   contentURI?: string;
@@ -87,16 +91,21 @@ export type ManualRequestMetadata = {
   accessType: "manual";
   requesterAddress?: string;
   providerAddress?: string;
+  arcJobId?: string;
   userType?: UserType;
   entityType?: EntityType;
   participantType?: ParticipantType;
   participantName?: string;
   operatorAddress?: string;
+  arcIdentityId?: string;
+  identitySource?: "arc_identity" | "self_declared";
   providerUserType?: UserType;
   providerEntityType?: EntityType;
   providerParticipantType?: ParticipantType;
   providerParticipantName?: string;
   providerOperatorAddress?: string;
+  providerArcIdentityId?: string;
+  providerIdentitySource?: "arc_identity" | "self_declared";
   deliveryHash?: string;
   metadataURI?: string;
   deadline?: string | null;

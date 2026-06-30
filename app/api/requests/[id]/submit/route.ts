@@ -1,5 +1,6 @@
 import { isAddress } from "ethers";
 import { NextResponse, type NextRequest } from "next/server";
+import { normalizeArcIdentityId } from "@/lib/arcNative";
 import {
   getEntityTypeFromLegacy,
   getLegacyParticipantType,
@@ -66,6 +67,7 @@ export async function POST(request: NextRequest, context: SubmitRouteContext) {
     typeof body.providerOperatorAddress === "string" && body.providerOperatorAddress.trim()
       ? body.providerOperatorAddress.trim()
       : undefined;
+  const providerArcIdentityId = normalizeArcIdentityId(body.providerArcIdentityId);
 
   const result = await submitServerRequestDeliveryAsync({
     requestId: id,
@@ -75,6 +77,7 @@ export async function POST(request: NextRequest, context: SubmitRouteContext) {
     providerParticipantType: providerParticipantType ?? getLegacyParticipantType(providerUserType),
     providerParticipantName,
     providerOperatorAddress,
+    providerArcIdentityId,
     deliveryText: body.deliveryText,
     deliveryURI: typeof body.deliveryURI === "string" ? body.deliveryURI : undefined,
     deliveryHash: typeof body.deliveryHash === "string" ? body.deliveryHash : undefined
@@ -95,7 +98,8 @@ export async function POST(request: NextRequest, context: SubmitRouteContext) {
       entityType: providerEntityType,
       participantType: result.request.providerParticipantType ?? null,
       participantName: providerParticipantName ?? null,
-      operatorAddress: providerOperatorAddress ?? null
+      operatorAddress: providerOperatorAddress ?? null,
+      providerArcIdentityId: providerArcIdentityId ?? null
     }
   });
 
@@ -107,9 +111,11 @@ export async function POST(request: NextRequest, context: SubmitRouteContext) {
     providerParticipantType: result.request.providerParticipantType,
     providerParticipantName,
     providerOperatorAddress,
+    providerArcIdentityId: result.request.providerArcIdentityId ?? null,
+    providerIdentitySource: result.request.providerIdentitySource ?? "self_declared",
     deliveryHash: result.delivery.deliveryHash,
     deliveryURI: result.delivery.deliveryURI,
     message:
-      "Delivery stored. With DATABASE_URL configured, it is persisted in PostgreSQL. Escrow-backed requests still require wallet/contract submitWork interaction for on-chain settlement."
+      "Deliverable stored. With DATABASE_URL configured, it is persisted in PostgreSQL. Arc-compatible Jobs still require wallet interaction for protected on-chain settlement."
   });
 }

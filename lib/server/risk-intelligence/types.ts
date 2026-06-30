@@ -8,6 +8,33 @@ export type RiskGuardDecision = "allow" | "review" | "block";
 export type RiskProfileStatus = "active" | "limited" | "no_data";
 export type UnknownWalletBehavior = "allow" | "review" | "block";
 export type RiskDataSource = "knowledge_exchange" | "arc_network" | "combined" | "no_data";
+export type EstimatedUserType = "Likely Human" | "Likely Agent" | "Unknown";
+export type IdentitySignalResult = "Human" | "Agent-like" | "Unknown";
+export type IdentityMatchStatus = "OK" | "Mismatch" | "Not declared";
+export type ArcRegistryStatus =
+  | "found"
+  | "not_configured"
+  | "abi_unavailable"
+  | "method_unavailable"
+  | "not_found"
+  | "unavailable";
+
+export type ArcRegistrySignal = {
+  source: "Arc Reputation" | "Arc Validations";
+  status: ArcRegistryStatus;
+  registryAddress?: string;
+  method?: string;
+  entries: Array<{
+    label?: string;
+    status?: string;
+    value?: string;
+    tag?: string;
+    issuer?: string;
+    txHash?: string;
+    raw?: string;
+  }>;
+  message?: string;
+};
 
 export interface RiskGuardPolicy {
   maxRiskScore?: number;
@@ -36,6 +63,8 @@ export interface RiskProfile {
     entityType?: "INDIVIDUAL" | "BUSINESS" | "ORGANIZATION" | "unknown";
     name?: string;
     operatorAddress?: string;
+    arcIdentityId?: string;
+    identitySource?: "arc_identity" | "self_declared";
   };
   scores: {
     financialBehaviorScore: number | null;
@@ -74,6 +103,24 @@ export interface RiskProfile {
       description?: string;
     };
   };
+  identityEstimation?: {
+    estimatedUserType: EstimatedUserType;
+    probability: number;
+    confidence: ConfidenceLevel;
+    evidenceSource: "Arc Network";
+    declaredUserType?: "HUMAN" | "AGENT" | "unknown";
+    identityMatch: IdentityMatchStatus;
+    cacheSource?: "live_estimation" | "postgres_cache";
+    lastEstimatedAt?: string;
+    signals: Array<{
+      label: string;
+      result: IdentitySignalResult;
+      explanation: string;
+    }>;
+    limitations: string[];
+  };
+  arcReputation?: ArcRegistrySignal;
+  arcValidations?: ArcRegistrySignal;
   behavioralSignals: Array<{
     label: string;
     value: string;

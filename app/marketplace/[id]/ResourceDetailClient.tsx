@@ -10,6 +10,7 @@ import { RatingSummaryText, StarDisplay, StarInput } from "@/components/StarRati
 import { TransactionStatus, type TransactionState } from "@/components/TransactionStatus";
 import { useUsdc } from "@/hooks/useUsdc";
 import { useWallet } from "@/hooks/useWallet";
+import { getIdentitySourceLabel } from "@/lib/arcNative";
 import { usdcDecimals } from "@/lib/contracts/microWorkEscrow";
 import {
   getEntityTypeLabel,
@@ -423,6 +424,16 @@ export function ResourceDetailClient({ initialResource, resourceId }: ResourceDe
               <dt className="text-slate-500">Entity Type</dt>
               <dd className="mt-1 text-white">{getEntityTypeLabel(resource.entityType)}</dd>
             </div>
+            <div>
+              <dt className="text-slate-500">Identity Source</dt>
+              <dd className="mt-1 text-white">{getIdentitySourceLabel(resource.identitySource)}</dd>
+            </div>
+            {resource.arcIdentityId ? (
+              <div>
+                <dt className="text-slate-500">Arc Identity ID</dt>
+                <dd className="mt-1 break-all text-white">{resource.arcIdentityId}</dd>
+              </div>
+            ) : null}
             {resource.operatorAddress ? (
               <div>
                 <dt className="text-slate-500">Operator wallet</dt>
@@ -677,7 +688,7 @@ ${getAgentPreviewPayload(resource)}`}
           ) : null}
 
           <p className="mt-4 text-sm leading-6 text-slate-400">
-            The payment is a direct ERC-20 USDC transfer to the seller. Unlock state is stored only
+            The payment is a direct USDC transfer to the seller. Unlock state is stored only
             in this browser for the connected wallet.
           </p>
 

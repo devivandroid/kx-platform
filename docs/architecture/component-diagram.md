@@ -1,16 +1,22 @@
 # Component Diagram
 
 This is the main engineering view of KX. It shows how product surfaces, public APIs,
-the Risk Intelligence Engine, SDK consumers and infrastructure fit together.
+KX Trust Services, the Risk Intelligence Engine, SDK consumers and infrastructure fit together.
 
 ```mermaid
 flowchart TB
   subgraph web["KX Web Application"]
     marketplace["Marketplace"]
-    requests["Requests"]
+    jobs["Jobs"]
     protected["Protected Transactions"]
     activity["My Activity"]
     agentApi["Agent API"]
+  end
+
+  subgraph trust["KX Trust Services"]
+    riskSvc["Risk Intelligence"]
+    identitySvc["Human / Agent Estimation"]
+    futureSvc["Reputation\nFraud Signals\nCompliance adapters"]
   end
 
   subgraph risk["Risk Intelligence Engine"]
@@ -31,7 +37,7 @@ flowchart TB
   usdc["USDC"]
 
   marketplace -->|"resource views, purchases, downloads"| data
-  requests -->|"request events and delivery events"| data
+  jobs -->|"Job and deliverable events"| data
   protected -->|"funding and release events"| data
   activity -->|"participant history"| data
   agentApi -->|"HTTP 402 commerce events"| data
@@ -41,14 +47,15 @@ flowchart TB
   features --> signals
   scoring --> guard
   signals --> guard
+  trust --> risk
 
   risk --> publicApis
   publicApis --> sdk
   sdk --> sdkMethods
 
   protected -->|"settlement"| arc
-  marketplace -->|"direct ERC-20 transfers"| usdc
-  protected -->|"USDC escrow settlement"| usdc
+  marketplace -->|"direct USDC transfers"| usdc
+  protected -->|"USDC protected settlement"| usdc
   usdc --> arc
 
   data -->|"persistent events and network snapshots"| postgres
@@ -60,10 +67,11 @@ flowchart TB
 
 - **KX Web Application**: the user-facing Next.js application.
 - **Marketplace**: commerce surface for resources, downloadable assets, APIs, services and knowledge packages.
-- **Requests**: custom work opportunities between humans, agents and organizations.
-- **Protected Transactions**: escrow-backed transaction flow for custom work.
+- **Jobs**: Arc-compatible custom work opportunities between humans, agents and organizations.
+- **Protected Transactions**: protected settlement flow for custom work.
 - **My Activity**: participant activity and local transaction context.
 - **Agent API**: HTTP 402 programmable commerce flow for autonomous clients.
+- **KX Trust Services**: reusable services over Arc-compatible Jobs, starting with Risk Intelligence and Human / Agent Estimation.
 - **Risk Intelligence Engine**: shared service layer that computes participant-aware risk profiles.
 - **Data Sources**: current KX events, with planned external adapters.
 - **Feature Layer**: normalized behavior metrics derived from events.
@@ -72,7 +80,7 @@ flowchart TB
 - **Risk Guard**: pre-transaction policy evaluator returning allow, review or block.
 - **Public Risk Intelligence APIs**: public REST endpoints under `/api/risk/*`.
 - **KX TypeScript SDK**: internal reusable client for builders and agent workflows.
-- **PostgreSQL**: planned persistent event and profile storage.
+- **PostgreSQL**: persistent resources, Jobs, activity, network snapshots and risk cache storage.
 - **IPFS**: planned durable resource and delivery storage.
 - **Arc**: EVM-compatible settlement network.
 - **USDC**: programmable payment asset used for direct purchases and protected transactions.
