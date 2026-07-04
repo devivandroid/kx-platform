@@ -1,6 +1,7 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import type { ReactNode } from "react";
 import { LoadingSpinner } from "@/components/LoadingSpinner";
 
 type ReputationLookupResult = {
@@ -13,12 +14,16 @@ type ReputationLookupResult = {
   participant?: {
     type: string;
     userType?: string;
+    kxDeclaredUserType?: string;
     entityType?: string;
     name: string | null;
     operatorAddress: string | null;
+    arcIdentityId?: string | null;
+    identitySource?: "arc_identity" | "self_declared";
   };
   scores?: {
     financialBehaviorScore: number | null;
+    trustScore?: number | null;
     riskScore: number | null;
     riskTier: string;
     confidenceLevel: string;
@@ -55,12 +60,21 @@ type ReputationLookupResult = {
     };
   };
   identityEstimation?: {
-    estimatedUserType: "Likely Human" | "Likely Agent" | "Unknown";
+    estimatedUserType:
+      | "Likely Human"
+      | "Leaning Human"
+      | "Likely Agent"
+      | "Leaning Agent"
+      | "Mixed / Inconclusive"
+      | "Unknown";
     probability: number;
     confidence: string;
     evidenceSource: "Arc Network";
+    kxDeclaredUserType?: "HUMAN" | "AGENT" | "unknown";
+    arcDeclaredIdentity?: string | null;
+    arcDeclaredUserType?: "HUMAN" | "AGENT" | "unknown";
     declaredUserType?: "HUMAN" | "AGENT" | "unknown";
-    identityMatch: "OK" | "Mismatch" | "Not declared";
+    identityMatch: "OK" | "Mismatch" | "Not available";
     cacheSource?: "live_estimation" | "postgres_cache";
     lastEstimatedAt?: string;
     signals: Array<{
@@ -69,6 +83,49 @@ type ReputationLookupResult = {
       explanation: string;
     }>;
     limitations: string[];
+  };
+  trustSnapshot?: {
+    id: string;
+    wallet: string;
+    riskScore: number | null;
+    trustScore?: number | null;
+    riskTier: string;
+    humanAgentEstimation?: string;
+    confidence: string;
+    publicationEligibilityReason?: string;
+    evidenceSource: string;
+    signalsSummary: string[];
+    schemaVersion: string;
+    engineVersion: string;
+    createdAt: string;
+    expiresAt: string;
+    reportHash: string;
+    signedPayload?: string | null;
+    signature?: string | null;
+    signerAddress?: string | null;
+    signingAlgorithm?: string | null;
+    signedAt?: string | null;
+    signatureStatus?: "verified" | "unsigned" | "not_configured" | "invalid";
+    arcIdentityId?: string | null;
+    arcJobId?: string | null;
+    attestationTxHash?: string | null;
+    attestationRegistryAddress?: string | null;
+    attestationStatus: "not_published" | "eligible" | "published" | "skipped";
+    publishedAt?: string | null;
+    revokedAt?: string | null;
+    revocationReason?: string | null;
+    onChainAttestation?: {
+      id: string;
+      wallet: string;
+      reportHash: string;
+      riskTier: string;
+      humanProbability: number;
+      confidence: string;
+      engineVersion: string;
+      evidenceURI: string;
+      timestamp: string;
+      isEmpty?: boolean;
+    } | null;
   };
   arcReputation?: ArcRegistrySignal;
   arcValidations?: ArcRegistrySignal;
@@ -130,6 +187,32 @@ type RiskBreakdown = {
   network: ReputationLookupResult | null;
 };
 
+type TrustPolicyId = "basic-safe" | "human-preferred" | "agent-safe" | "enterprise-strict";
+type TrustPolicyRiskTier = "LOW" | "MEDIUM" | "HIGH" | "UNKNOWN";
+
+type TrustPolicyEvaluationResult = {
+  ok: true;
+  decision: "ALLOW" | "REVIEW" | "BLOCK";
+  policyId: TrustPolicyId;
+  policyName: string;
+  reasons: string[];
+  failedRules: string[];
+  passedRules: string[];
+  criticalSignals: string[];
+  trustSnapshot?: ReputationLookupResult["trustSnapshot"];
+  reportHash: string | null;
+  signatureStatus: "verified" | "unsigned" | "not_configured" | "invalid" | null;
+  profile: {
+    rawRiskTier: ReputationLookupResult["riskTier"];
+    policyRiskTier: TrustPolicyRiskTier;
+    riskScore: number | null;
+    confidence: string;
+    estimatedIdentity: string;
+    humanProbability: number | null;
+    identityMatch: string;
+  };
+};
+
 const sourceOptions: Array<{ value: RiskSource; label: string; description: string }> = [
   {
     value: "internal",
@@ -148,11 +231,48 @@ const sourceOptions: Array<{ value: RiskSource; label: string; description: stri
   }
 ];
 
+const trustPolicyOptions: Array<{ value: TrustPolicyId; label: string; description: string }> = [
+  {
+    value: "basic-safe",
+    label: "Basic Safe",
+    description: "Low risk and confidence above Low."
+  },
+  {
+    value: "human-preferred",
+    label: "Human Preferred",
+    description: "Human-like behavior with acceptable risk."
+  },
+  {
+    value: "agent-safe",
+    label: "Agent Safe",
+    description: "Agent-like behavior, Low risk and High confidence."
+  },
+  {
+    value: "enterprise-strict",
+    label: "Enterprise Strict",
+    description: "Low risk, High confidence and signed snapshot evidence."
+  }
+];
+
+const riskLookupLoadingSteps = [
+  "Checking Arc humanity",
+  "Estimating humanity",
+  "Checking Risk",
+  "Reading KX data",
+  "Preparing decision"
+];
+
 function getRiskAccent(tier: string): string {
   if (tier === "Low") return "border-emerald-300/40 bg-emerald-300/10 text-emerald-100";
   if (tier === "Medium") return "border-amber-300/40 bg-amber-300/10 text-amber-100";
   if (tier === "High") return "border-red-300/40 bg-red-300/10 text-red-100";
   return "border-slate-400/30 bg-slate-400/10 text-slate-300";
+}
+
+function getDecisionAccent(decision: TrustPolicyEvaluationResult["decision"]): string {
+  if (decision === "ALLOW") return "border-emerald-300/40 bg-emerald-300/10 text-emerald-100";
+  if (decision === "BLOCK") return "border-red-300/40 bg-red-300/10 text-red-100";
+  return "border-amber-300/40 bg-amber-300/10 text-amber-100";
 }
 
 function formatNullableScore(value: number | null | undefined): string {
@@ -173,6 +293,101 @@ function getArcRegistryStatusLabel(status: ArcRegistrySignal["status"]): string 
   if (status === "method_unavailable") return "Official read method not configured";
   if (status === "not_found") return "No record found";
   return "Unavailable";
+}
+
+function getIdentityEstimationSummary(
+  identityEstimation?: ReputationLookupResult["identityEstimation"]
+) {
+  if (!identityEstimation || identityEstimation.estimatedUserType === "Unknown") {
+    return "Insufficient evidence";
+  }
+  return `${identityEstimation.estimatedUserType} ${identityEstimation.probability}%`;
+}
+
+function getTrustSnapshotStatusLabel(status: NonNullable<ReputationLookupResult["trustSnapshot"]>["attestationStatus"]) {
+  if (status === "eligible") return "Eligible";
+  if (status === "published") return "Published on Arc Testnet";
+  if (status === "skipped") return "Skipped";
+  return "Not published";
+}
+
+function getTrustSnapshotSignatureStatusLabel(
+  status?: NonNullable<ReputationLookupResult["trustSnapshot"]>["signatureStatus"] | null
+) {
+  if (status === "verified") return "Verified";
+  if (status === "not_configured") return "Backend signer not configured";
+  if (status === "invalid") return "Invalid";
+  if (status === "unsigned") return "Unsigned";
+  return "Unavailable";
+}
+
+function getAttestationTxUrl(txHash?: string | null) {
+  const explorerUrl = process.env.NEXT_PUBLIC_EXPLORER_URL?.replace(/\/+$/, "");
+  return explorerUrl && txHash ? `${explorerUrl}/tx/${txHash}` : null;
+}
+
+function getAttestationPublicationMessage(snapshot?: ReputationLookupResult["trustSnapshot"]) {
+  if (!snapshot) return "No Trust Snapshot has been generated yet.";
+  if (snapshot.attestationStatus === "published") {
+    if (snapshot.onChainAttestation?.engineVersion === "Test Attestation - Arc Testnet") {
+      return "Published as a test attestation on Arc Testnet.";
+    }
+    return "Published automatically because publication eligibility was met.";
+  }
+  if (snapshot.attestationStatus === "eligible") {
+    return "Eligible for publication. Production publishing remains manual in this testnet MVP.";
+  }
+  return (
+    snapshot.publicationEligibilityReason ??
+    "Not published automatically because publication eligibility was not met."
+  );
+}
+
+function MetricCard({ label, value }: { label: string; value: string | number | null | undefined }) {
+  return (
+    <div className="rounded-lg border border-arc-border bg-white/[0.03] p-3">
+      <dt className="text-xs text-slate-500">{label}</dt>
+      <dd className="mt-1 text-sm font-semibold text-white">
+        {typeof value === "number" || value === null || value === undefined
+          ? formatNullableScore(value)
+          : value}
+      </dd>
+    </div>
+  );
+}
+
+function DetailSection({
+  title,
+  description,
+  children,
+  defaultOpen = false
+}: {
+  title: string;
+  description?: string;
+  children: ReactNode;
+  defaultOpen?: boolean;
+}) {
+  return (
+    <details
+      open={defaultOpen}
+      className="rounded-lg border border-arc-border bg-white/[0.03] p-4"
+    >
+      <summary className="cursor-pointer list-none">
+        <div className="flex items-center justify-between gap-3">
+          <div>
+            <p className="text-sm font-semibold text-white">{title}</p>
+            {description ? (
+              <p className="mt-1 text-xs leading-5 text-slate-500">{description}</p>
+            ) : null}
+          </div>
+          <span className="rounded-full border border-slate-500/40 px-2 py-1 text-xs text-slate-300">
+            Show details
+          </span>
+        </div>
+      </summary>
+      <div className="mt-4">{children}</div>
+    </details>
+  );
 }
 
 function ArcRegistryPanel({ signal }: { signal?: ArcRegistrySignal }) {
@@ -271,31 +486,67 @@ function getVisibleBehavioralSignals(result: ReputationLookupResult) {
 }
 
 function getParticipantDisplay(result: ReputationLookupResult): string {
-  const userType = result.participant?.userType ?? result.participant?.type ?? "unknown";
+  const userType = result.participant?.kxDeclaredUserType ?? "unknown";
   const entityType = result.participant?.entityType ?? "unknown";
-  const participantLabel = `${userType} / ${entityType}`;
+  const participantLabel = `${userType === "unknown" ? "Not declared" : userType} / ${entityType}`;
 
   if (result.participant?.name) {
-    return `${result.participant.name} · ${participantLabel}`;
+    return `${result.participant.name} - ${participantLabel}`;
   }
 
   return userType === "unknown" && entityType === "unknown" ? "Unknown user and entity type" : participantLabel;
+}
+
+function getTrustScoreLabel(value: number | null | undefined): string {
+  if (value === null || value === undefined) return "Not assessed";
+  if (value >= 80) return `${value} / Strong`;
+  if (value >= 60) return `${value} / Moderate`;
+  if (value >= 40) return `${value} / Limited`;
+  return `${value} / Weak`;
 }
 
 export function ReputationLookup() {
   const [wallet, setWallet] = useState("");
   const [source, setSource] = useState<RiskSource>("combined");
   const [useIndexedData, setUseIndexedData] = useState(true);
-  const [showIdentityEstimation, setShowIdentityEstimation] = useState(false);
+  const [showIdentityEstimation, setShowIdentityEstimation] = useState(true);
   const [result, setResult] = useState<ReputationLookupResult | null>(null);
   const [breakdown, setBreakdown] = useState<RiskBreakdown>({ internal: null, network: null });
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+  const [loadingStepIndex, setLoadingStepIndex] = useState(0);
+  const [publishingSnapshot, setPublishingSnapshot] = useState(false);
+  const [selectedPolicyId, setSelectedPolicyId] = useState<TrustPolicyId>("basic-safe");
+  const [evaluatingPolicy, setEvaluatingPolicy] = useState(false);
+  const [policyEvaluation, setPolicyEvaluation] = useState<TrustPolicyEvaluationResult | null>(null);
+  const evaluatePolicyForProfile = async (
+    profile: ReputationLookupResult,
+    policyId: TrustPolicyId
+  ) => {
+    const response = await fetch("/api/trust/policy/evaluate", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        wallet: profile.wallet,
+        policyId,
+        profile
+      })
+    });
+    const body = await response.json();
+    if (!response.ok) {
+      throw new Error(body.message || body.error || "Trust policy evaluation failed.");
+    }
+    return body as TrustPolicyEvaluationResult;
+  };
+
   const lookup = async () => {
     setLoading(true);
     setError("");
     setResult(null);
     setBreakdown({ internal: null, network: null });
+    setPolicyEvaluation(null);
 
     try {
       const endpoint =
@@ -307,21 +558,26 @@ export function ReputationLookup() {
       if (!response.ok) {
         throw new Error(body.message || body.error || "Lookup failed.");
       }
+      const policyPromise = evaluatePolicyForProfile(body, selectedPolicyId);
+      const policyBody = await policyPromise;
+      setPolicyEvaluation(policyBody);
+      setResult(body);
 
       const networkBreakdown =
         source === "arc_network"
           ? body
-          : await fetch(`/api/risk/network/${wallet}?useIndexedData=true`).then((networkResponse) =>
+          : await fetch(
+              `/api/risk/network/${wallet}?useIndexedData=true&includeTrustSnapshot=false`
+            ).then((networkResponse) =>
               networkResponse.ok ? networkResponse.json() : null
             );
       const [internalBody, networkBody] = await Promise.all([
-        fetch(`/api/risk/profile/${wallet}?source=internal`).then((internalResponse) =>
-          internalResponse.ok ? internalResponse.json() : null
+        fetch(`/api/risk/profile/${wallet}?source=internal&includeTrustSnapshot=false`).then(
+          (internalResponse) => (internalResponse.ok ? internalResponse.json() : null)
         ),
         Promise.resolve(networkBreakdown)
       ]);
 
-      setResult(body);
       setBreakdown({
         internal: internalBody,
         network: networkBody
@@ -332,13 +588,84 @@ export function ReputationLookup() {
       setLoading(false);
     }
   };
+  const evaluateSelectedPolicy = async () => {
+    if (!result?.wallet) return;
+
+    setEvaluatingPolicy(true);
+    setError("");
+
+    try {
+      const body = await evaluatePolicyForProfile(result, selectedPolicyId);
+      setPolicyEvaluation(body);
+    } catch (policyError) {
+      setError(
+        policyError instanceof Error
+          ? policyError.message
+          : "Trust policy evaluation failed."
+      );
+    } finally {
+      setEvaluatingPolicy(false);
+    }
+  };
+  const publishTrustSnapshot = async (mode: "eligible" | "test") => {
+    if (!result?.wallet || !result.trustSnapshot) return;
+
+    setPublishingSnapshot(true);
+    setError("");
+
+    try {
+      const response = await fetch(`/api/risk/snapshots/${result.wallet}`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({ snapshotId: result.trustSnapshot.id, mode })
+      });
+      const body = await response.json();
+      if (!response.ok) {
+        throw new Error(body.message || body.error || "Trust Attestation publish failed.");
+      }
+
+      setResult((current) =>
+        current
+          ? {
+              ...current,
+              trustSnapshot: body.snapshot
+            }
+          : current
+      );
+    } catch (publishError) {
+      setError(
+        publishError instanceof Error
+          ? publishError.message
+          : "Trust Attestation publish failed."
+      );
+    } finally {
+      setPublishingSnapshot(false);
+    }
+  };
   const identityEstimation = result?.identityEstimation ?? breakdown.network?.identityEstimation;
+
+  useEffect(() => {
+    if (!loading) {
+      setLoadingStepIndex(0);
+      return;
+    }
+
+    const interval = window.setInterval(() => {
+      setLoadingStepIndex((current) =>
+        Math.min(current + 1, riskLookupLoadingSteps.length - 1)
+      );
+    }, 1300);
+
+    return () => window.clearInterval(interval);
+  }, [loading]);
 
   return (
     <div className="rounded-lg border border-arc-border bg-arc-panel/80 p-5">
       <h2 className="text-xl font-semibold text-white">Wallet lookup</h2>
       <p className="mt-2 text-sm leading-6 text-slate-400">
-        Query Risk Intelligence using internal activity, Arc Testnet RPC signals, or a combined view.
+        Analyze wallet trust using KX activity, Arc Testnet signals, or a combined view.
       </p>
       <div className="mt-4 grid gap-2 sm:grid-cols-3">
         {sourceOptions.map((option) => (
@@ -371,7 +698,7 @@ export function ReputationLookup() {
           className="inline-flex items-center justify-center gap-2 rounded-lg bg-arc-blue px-5 py-3 text-sm font-semibold text-arc-ink disabled:cursor-not-allowed disabled:opacity-60"
         >
           {loading ? <LoadingSpinner /> : null}
-          {loading ? "Checking..." : "Check Risk Intelligence"}
+          {loading ? riskLookupLoadingSteps[loadingStepIndex] : "Analyze Trust"}
         </button>
       </div>
       <label className="mt-3 flex max-w-max items-start gap-2 text-xs text-slate-400">
@@ -409,319 +736,336 @@ export function ReputationLookup() {
       ) : null}
       {result ? (
         <div className="mt-4 grid gap-5 rounded-lg border border-arc-border bg-black/20 p-4 text-sm">
-          {result.profileStatus === "no_data" ? (
-            <div className="rounded-lg border border-sky-300/25 bg-sky-300/10 p-4">
-              <p className="font-semibold text-sky-100">
-                No KX activity found
-              </p>
-              <p className="mt-2 leading-6 text-slate-300">
-                This wallet has no activity in KX yet. Risk cannot be
-                assessed from marketplace data alone.
-              </p>
-              <p className="mt-3 rounded-lg border border-slate-500/30 bg-black/20 p-3 text-sm font-medium text-slate-200">
-                Missing data is not the same as high risk.
-              </p>
-              <p className="mt-2 leading-6 text-slate-400">
-                Use review mode, request additional verification, or apply your own risk
-                policy before transacting.
-              </p>
-            </div>
-          ) : null}
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <div>
-              <p className="font-semibold text-white">
-                {getParticipantDisplay(result)}
-              </p>
-              <p className="mt-1 break-all text-xs text-slate-500">{result.wallet}</p>
-              <p className="mt-1 text-xs uppercase tracking-normal text-slate-500">
-                Data source: {result.dataSource ?? "knowledge_exchange"}
-              </p>
-              {result.participant?.operatorAddress ? (
-                <p className="mt-1 break-all text-xs text-slate-500">
-                  Operator: {result.participant.operatorAddress}
+          <section className="rounded-lg border border-arc-border bg-white/[0.03] p-4">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+              <div>
+                <p className="text-sm font-semibold text-white">Overall Result</p>
+                <p className="mt-1 text-base font-semibold text-white">
+                  {getParticipantDisplay(result)}
                 </p>
-              ) : null}
+                <p className="mt-1 break-all text-xs text-slate-500">{result.wallet}</p>
+                <p className="mt-1 text-xs uppercase tracking-normal text-slate-500">
+                  Data source: {result.dataSource ?? "knowledge_exchange"}
+                </p>
+              </div>
+              <span
+                className={`rounded-full border px-3 py-1 text-xs font-semibold ${getRiskAccent(
+                  result.riskTier
+                )}`}
+              >
+                {result.riskTier} risk
+              </span>
             </div>
-            <span
-              className={`rounded-full border px-3 py-1 text-xs font-semibold ${getRiskAccent(
-                result.riskTier
-              )}`}
-            >
-              {result.riskTier} risk
-            </span>
-          </div>
 
-          <div>
-            <p className="text-sm font-semibold text-white">Data Breakdown</p>
+            {result.profileStatus === "no_data" ? (
+              <p className="mt-4 rounded-lg border border-sky-300/25 bg-sky-300/10 p-3 text-sm font-medium text-sky-100">
+                No KX activity found. Missing data is neutral, not high risk.
+              </p>
+            ) : null}
             {breakdown.internal?.profileStatus === "no_data" &&
             breakdown.network?.profileStatus !== "no_data" ? (
               <p className="mt-3 rounded-lg border border-sky-300/25 bg-sky-300/10 p-3 text-sm font-medium text-sky-100">
                 Arc Network Data only. No KX marketplace activity found.
               </p>
             ) : null}
-            <div className="mt-3 grid gap-3 lg:grid-cols-2">
-              <div className="rounded-lg border border-arc-border bg-white/[0.03] p-4">
-                <div className="flex items-center justify-between gap-3">
-                  <div>
-                    <p className="text-sm font-semibold text-white">KX Data</p>
-                    <p className="mt-1 text-xs text-slate-500">
-                      Marketplace, purchases, Jobs, deliverables and ratings.
+
+            <dl className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+              {[
+                [
+                  "Trust Score",
+                  getTrustScoreLabel(result.scores?.trustScore ?? result.scores?.financialBehaviorScore)
+                ],
+                [
+                  "Risk Score",
+                  `${formatNullableScore(result.scores?.riskScore ?? result.financialRiskScore)} / ${
+                    result.scores?.riskTier ?? result.riskTier
+                  }`
+                ],
+                ["Policy Decision", policyEvaluation?.decision ?? "Run policy"],
+                ["Analysis Confidence", result.scores?.confidenceLevel ?? result.confidenceLevel],
+                [
+                  "Estimated Identity",
+                  getIdentityEstimationSummary(identityEstimation)
+                ],
+                ["Signature Status", getTrustSnapshotSignatureStatusLabel(result.trustSnapshot?.signatureStatus)],
+                [
+                  "Latest Attestation Status",
+                  result.trustSnapshot
+                    ? getTrustSnapshotStatusLabel(result.trustSnapshot.attestationStatus)
+                    : "No snapshot"
+                ]
+              ].map(([label, value]) => (
+                <MetricCard key={String(label)} label={String(label)} value={value} />
+              ))}
+            </dl>
+          </section>
+
+          <section className="rounded-lg border border-arc-border bg-white/[0.03] p-4">
+            <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
+              <div>
+                <p className="text-sm font-semibold text-white">Trust Policy Engine</p>
+                <p className="mt-1 max-w-2xl text-xs leading-5 text-slate-500">
+                  Decision layer over Arc and KX Trust Engine evidence. This is not KYC, AML or
+                  compliance approval.
+                </p>
+              </div>
+              <div className="flex flex-col gap-2 sm:flex-row">
+                <select
+                  value={selectedPolicyId}
+                  onChange={(event) => setSelectedPolicyId(event.target.value as TrustPolicyId)}
+                  className="rounded-lg border border-arc-border bg-black/30 px-3 py-2 text-sm font-semibold text-white outline-none focus:border-arc-blue"
+                >
+                  {trustPolicyOptions.map((policy) => (
+                    <option key={policy.value} value={policy.value}>
+                      {policy.label}
+                    </option>
+                  ))}
+                </select>
+                <button
+                  type="button"
+                  onClick={evaluateSelectedPolicy}
+                  disabled={evaluatingPolicy}
+                  className="inline-flex items-center justify-center gap-2 rounded-lg border border-arc-blue/40 bg-arc-blue/15 px-4 py-2 text-sm font-semibold text-cyan-100 disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  {evaluatingPolicy ? <LoadingSpinner /> : null}
+                  {evaluatingPolicy ? "Evaluating..." : "Evaluate Policy"}
+                </button>
+              </div>
+            </div>
+
+            <p className="mt-3 text-xs leading-5 text-slate-500">
+              {trustPolicyOptions.find((policy) => policy.value === selectedPolicyId)?.description}
+            </p>
+
+            {policyEvaluation ? (
+              <div className="mt-4 grid gap-4">
+                <div className="flex flex-wrap items-center gap-3">
+                  <span
+                    className={`rounded-full border px-3 py-1 text-xs font-semibold ${getDecisionAccent(
+                      policyEvaluation.decision
+                    )}`}
+                  >
+                    {policyEvaluation.decision}
+                  </span>
+                  <span className="text-sm font-semibold text-white">
+                    {policyEvaluation.policyName}
+                  </span>
+                  <span className="break-all text-xs text-slate-500">
+                    Report hash: {policyEvaluation.reportHash ?? "Unavailable"}
+                  </span>
+                  <span className="text-xs text-slate-500">
+                    Signature:{" "}
+                    {getTrustSnapshotSignatureStatusLabel(policyEvaluation.signatureStatus)}
+                  </span>
+                </div>
+
+                <dl className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                  {[
+                    ["Policy risk tier", policyEvaluation.profile.policyRiskTier],
+                    ["Raw risk tier", policyEvaluation.profile.rawRiskTier],
+                    ["Risk score", policyEvaluation.profile.riskScore],
+                    ["Analysis Confidence", policyEvaluation.profile.confidence]
+                  ].map(([label, value]) => (
+                    <MetricCard key={String(label)} label={String(label)} value={value} />
+                  ))}
+                </dl>
+
+                {policyEvaluation.reasons.length > 0 ? (
+                  <div className="rounded-lg border border-arc-border bg-black/20 p-3">
+                    <p className="text-xs font-semibold uppercase tracking-normal text-slate-500">
+                      Reasons
                     </p>
+                    <ul className="mt-2 grid gap-1 text-sm text-slate-300">
+                      {policyEvaluation.reasons.map((reason) => (
+                        <li key={reason}>{reason}</li>
+                      ))}
+                    </ul>
                   </div>
+                ) : null}
+
+                {policyEvaluation.criticalSignals.length > 0 ? (
+                  <div className="rounded-lg border border-red-300/30 bg-red-300/10 p-3">
+                    <p className="text-xs font-semibold uppercase tracking-normal text-red-100">
+                      Critical signals
+                    </p>
+                    <ul className="mt-2 grid gap-1 text-sm text-red-100">
+                      {policyEvaluation.criticalSignals.map((signal) => (
+                        <li key={signal}>{signal}</li>
+                      ))}
+                    </ul>
+                  </div>
+                ) : null}
+
+                <div className="grid gap-3 lg:grid-cols-2">
+                  <div className="rounded-lg border border-emerald-300/20 bg-emerald-300/5 p-3">
+                    <p className="text-xs font-semibold uppercase tracking-normal text-emerald-100">
+                      Passed rules
+                    </p>
+                    <ul className="mt-2 grid gap-1 text-sm text-slate-300">
+                      {policyEvaluation.passedRules.length > 0 ? (
+                        policyEvaluation.passedRules.map((rule) => <li key={rule}>{rule}</li>)
+                      ) : (
+                        <li>No passed rules.</li>
+                      )}
+                    </ul>
+                  </div>
+                  <div className="rounded-lg border border-red-300/20 bg-red-300/5 p-3">
+                    <p className="text-xs font-semibold uppercase tracking-normal text-red-100">
+                      Failed rules
+                    </p>
+                    <ul className="mt-2 grid gap-1 text-sm text-slate-300">
+                      {policyEvaluation.failedRules.length > 0 ? (
+                        policyEvaluation.failedRules.map((rule) => <li key={rule}>{rule}</li>)
+                      ) : (
+                        <li>No failed rules.</li>
+                      )}
+                    </ul>
+                  </div>
+                </div>
+              </div>
+            ) : null}
+          </section>
+
+          <section className="rounded-lg border border-arc-border bg-white/[0.03] p-4">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+              <div>
+                <p className="text-sm font-semibold text-white">Arc Testnet Attestation</p>
+                <p className="mt-1 max-w-2xl text-xs leading-5 text-slate-500">
+                  Trust Snapshots are signed automatically off-chain. Selected snapshots may be
+                  published as minimal attestations on Arc Testnet.
+                </p>
+              </div>
+              <span className="rounded-full border border-slate-500/40 px-2 py-1 text-xs text-slate-300">
+                {result.trustSnapshot
+                  ? getTrustSnapshotStatusLabel(result.trustSnapshot.attestationStatus)
+                  : "No snapshot"}
+              </span>
+            </div>
+            <p className="mt-3 rounded-lg border border-arc-border bg-black/20 p-3 text-sm text-slate-300">
+              {getAttestationPublicationMessage(result.trustSnapshot)}
+            </p>
+
+            {result.trustSnapshot?.attestationTxHash ? (
+              <a
+                href={getAttestationTxUrl(result.trustSnapshot.attestationTxHash) ?? "#"}
+                target="_blank"
+                rel="noreferrer"
+                className="mt-3 inline-flex break-all text-sm font-semibold text-arc-blue hover:text-cyan-200"
+              >
+                View Trust Attestation on Arcscan
+              </a>
+            ) : null}
+
+            {result.trustSnapshot?.onChainAttestation &&
+            !result.trustSnapshot.onChainAttestation.isEmpty ? (
+              <dl className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                {[
+                  ["Attestation ID", `#${result.trustSnapshot.onChainAttestation.id}`],
+                  ["Risk tier", result.trustSnapshot.onChainAttestation.riskTier],
+                  [
+                    "Human probability",
+                    `${result.trustSnapshot.onChainAttestation.humanProbability}%`
+                  ],
+                  ["Timestamp", formatDate(result.trustSnapshot.onChainAttestation.timestamp)]
+                ].map(([label, value]) => (
+                  <MetricCard key={label} label={label} value={value} />
+                ))}
+              </dl>
+            ) : null}
+
+            {result.trustSnapshot?.attestationStatus === "eligible" ? (
+              <button
+                type="button"
+                onClick={() => publishTrustSnapshot("eligible")}
+                disabled={publishingSnapshot}
+                className="mt-3 inline-flex items-center justify-center gap-2 rounded-lg border border-arc-blue/40 bg-arc-blue/15 px-4 py-2 text-sm font-semibold text-cyan-100 disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                {publishingSnapshot ? <LoadingSpinner /> : null}
+                {publishingSnapshot ? "Publishing..." : "Publish Trust Attestation"}
+              </button>
+            ) : null}
+            {result.trustSnapshot ? (
+              <button
+                type="button"
+                onClick={() => publishTrustSnapshot("test")}
+                disabled={publishingSnapshot}
+                className="ml-0 mt-3 inline-flex items-center justify-center gap-2 rounded-lg border border-amber-300/40 bg-amber-300/10 px-4 py-2 text-sm font-semibold text-amber-100 disabled:cursor-not-allowed disabled:opacity-60 sm:ml-3"
+              >
+                {publishingSnapshot ? <LoadingSpinner /> : null}
+                {publishingSnapshot ? "Publishing test..." : "Publish TEST Attestation"}
+              </button>
+            ) : null}
+          </section>
+
+          <section className="rounded-lg border border-arc-border bg-white/[0.03] p-4">
+            <p className="text-sm font-semibold text-white">Wallet Data Summary</p>
+            <div className="mt-3 grid gap-3 lg:grid-cols-2">
+              <div className="rounded-lg border border-arc-border bg-black/20 p-4">
+                <div className="flex items-center justify-between gap-3">
+                  <p className="text-sm font-semibold text-white">KX Data</p>
                   <span className="rounded-full border border-slate-500/40 px-2 py-1 text-xs text-slate-300">
                     {breakdown.internal?.profileStatus ?? "no_data"}
                   </span>
                 </div>
-                <dl className="mt-4 grid gap-2 text-sm">
-                  <div className="flex justify-between gap-3 border-b border-arc-border/60 pb-2">
-                    <dt className="text-slate-500">Completed volume</dt>
-                    <dd className="font-medium text-slate-200">
-                      {formatUSDC(breakdown.internal?.activity?.totalCompletedVolumeUSDC)}
-                    </dd>
-                  </div>
-                  <div className="flex justify-between gap-3 border-b border-arc-border/60 py-2">
-                    <dt className="text-slate-500">Completed actions</dt>
-                    <dd className="font-medium text-slate-200">
-                      {breakdown.internal?.activity?.completedActions ?? 0}
-                    </dd>
-                  </div>
-                  <div className="flex justify-between gap-3 pt-2">
-                    <dt className="text-slate-500">Last activity</dt>
-                    <dd className="font-medium text-slate-200">
-                      {formatKXLastActivity(breakdown.internal?.activity?.lastActivity)}
-                    </dd>
-                  </div>
+                <dl className="mt-4 grid gap-2">
+                  {[
+                    ["Completed volume", formatUSDC(breakdown.internal?.activity?.totalCompletedVolumeUSDC)],
+                    ["Completed actions", breakdown.internal?.activity?.completedActions ?? 0],
+                    ["Counterparties", breakdown.internal?.activity?.uniqueCounterparties ?? 0],
+                    ["Last activity", formatKXLastActivity(breakdown.internal?.activity?.lastActivity)],
+                    ["Cache source", breakdown.internal?.metadata?.cacheSource ?? "KX database"]
+                  ].map(([label, value]) => (
+                    <div key={label} className="flex justify-between gap-3 border-b border-arc-border/60 py-2 last:border-b-0">
+                      <dt className="text-slate-500">{label}</dt>
+                      <dd className="font-medium text-slate-200">{value}</dd>
+                    </div>
+                  ))}
                 </dl>
               </div>
 
-              <div className="rounded-lg border border-arc-border bg-white/[0.03] p-4">
+              <div className="rounded-lg border border-arc-border bg-black/20 p-4">
                 <div className="flex items-center justify-between gap-3">
-                  <div>
-                    <p className="text-sm font-semibold text-white">Arc Network</p>
-                    <p className="mt-1 text-xs text-slate-500">
-                      Arcscan API counters plus KX on-demand USDC Transfer indexing.
-                    </p>
-                  </div>
+                  <p className="text-sm font-semibold text-white">Arc Network</p>
                   <span className="rounded-full border border-slate-500/40 px-2 py-1 text-xs text-slate-300">
                     {breakdown.network?.profileStatus ?? "no_data"}
                   </span>
                 </div>
-                <dl className="mt-4 grid gap-2 text-sm">
-                  <div className="flex justify-between gap-3 border-b border-arc-border/60 pb-2">
-                    <dt className="text-slate-500">Native USDC balance</dt>
-                    <dd className="font-medium text-slate-200">
-                      {getBehavioralSignalValue(breakdown.network, "Native USDC balance")}
-                    </dd>
-                  </div>
-                  <div className="flex justify-between gap-3 border-b border-arc-border/60 py-2">
-                    <dt className="text-slate-500">KX-indexed USDC volume</dt>
-                    <dd className="font-medium text-slate-200">
-                      {formatUSDC(breakdown.network?.activity?.totalCompletedVolumeUSDC)}
-                    </dd>
-                  </div>
-                  <div className="flex justify-between gap-3 border-b border-arc-border/60 py-2">
-                    <dt className="text-slate-500">Arcscan API transactions</dt>
-                    <dd className="font-medium text-slate-200">
-                      {getBehavioralSignalValue(breakdown.network, "Transactions indexed")}
-                    </dd>
-                  </div>
-                  <div className="flex justify-between gap-3 border-b border-arc-border/60 py-2">
-                    <dt className="text-slate-500">Arcscan API transfers</dt>
-                    <dd className="font-medium text-slate-200">
-                      {getBehavioralSignalValue(breakdown.network, "Transfers indexed")}
-                    </dd>
-                  </div>
-                  <div className="flex justify-between gap-3 border-b border-arc-border/60 py-2">
-                    <dt className="text-slate-500">Arcscan API gas used</dt>
-                    <dd className="font-medium text-slate-200">
-                      {getBehavioralSignalValue(breakdown.network, "Gas used")}
-                    </dd>
-                  </div>
-                  <div className="flex justify-between gap-3 border-b border-arc-border/60 py-2">
-                    <dt className="text-slate-500">Data freshness</dt>
-                    <dd className="font-medium text-slate-200">
-                      {breakdown.network?.metadata?.dataFreshness ?? "Unavailable"}
-                    </dd>
-                  </div>
-                  <div className="flex justify-between gap-3 border-b border-arc-border/60 py-2">
-                    <dt className="text-slate-500">Last indexed</dt>
-                    <dd className="font-medium text-slate-200">
-                      {formatDate(breakdown.network?.metadata?.lastIndexed)}
-                    </dd>
-                  </div>
-                  <div className="flex justify-between gap-3 border-b border-arc-border/60 py-2">
-                    <dt className="text-slate-500">Cache source</dt>
-                    <dd className="font-medium text-slate-200">
-                      {breakdown.network?.metadata?.cacheSource ?? "Unavailable"}
-                    </dd>
-                  </div>
-                  <div className="flex justify-between gap-3 border-b border-arc-border/60 py-2">
-                    <dt className="text-slate-500">Block range</dt>
-                    <dd className="font-medium text-slate-200">
-                      {getBehavioralSignalValue(breakdown.network, "Block range analyzed")}
-                    </dd>
-                  </div>
-                  <div className="flex justify-between gap-3 border-b border-arc-border/60 py-2">
-                    <dt className="text-slate-500">Coverage</dt>
-                    <dd className="font-medium text-slate-200">
-                      {breakdown.network?.metadata?.coverage?.blocksAnalyzed
-                        ? `${breakdown.network.metadata.coverage.blocksAnalyzed} blocks; full history: ${
-                            breakdown.network.metadata.coverage.fullHistory ? "yes" : "no"
-                          }`
-                        : "Unavailable"}
-                    </dd>
-                  </div>
-                  <div className="flex justify-between gap-3 pt-2">
-                    <dt className="text-slate-500">Network activity level</dt>
-                    <dd className="font-medium text-slate-200">
-                      {breakdown.network?.activity?.activityLevel ?? "Unknown"}
-                    </dd>
-                  </div>
+                <dl className="mt-4 grid gap-2">
+                  {[
+                    ["Native USDC balance", getBehavioralSignalValue(breakdown.network, "Native USDC balance")],
+                    ["USDC volume", formatUSDC(breakdown.network?.activity?.totalCompletedVolumeUSDC)],
+                    ["Transactions", getBehavioralSignalValue(breakdown.network, "Transactions indexed")],
+                    ["Transfers", getBehavioralSignalValue(breakdown.network, "Transfers indexed")],
+                    ["Counterparties", breakdown.network?.activity?.uniqueCounterparties ?? 0],
+                    ["Last activity", formatDate(breakdown.network?.activity?.lastActivity)],
+                    ["Last indexed", formatDate(breakdown.network?.metadata?.lastIndexed)],
+                    ["Cache source", breakdown.network?.metadata?.cacheSource ?? "Unavailable"]
+                  ].map(([label, value]) => (
+                    <div key={label} className="flex justify-between gap-3 border-b border-arc-border/60 py-2 last:border-b-0">
+                      <dt className="text-slate-500">{label}</dt>
+                      <dd className="font-medium text-slate-200">{value}</dd>
+                    </div>
+                  ))}
                 </dl>
               </div>
             </div>
-          </div>
 
-          {showIdentityEstimation ? (
-            <div className="rounded-lg border border-arc-border bg-white/[0.03] p-4">
-              <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-                <div>
-                  <p className="text-sm font-semibold text-white">Human / Agent Estimation</p>
-                  <p className="mt-1 max-w-2xl text-xs leading-5 text-slate-500">
-                    Lightweight behavioral estimation based only on Arc Network activity. This is
-                    not identity verification, KYC, AML, compliance screening or bot detection.
-                  </p>
-                </div>
-                <span className="rounded-full border border-slate-500/40 px-2 py-1 text-xs text-slate-300">
-                  Evidence source: {identityEstimation?.evidenceSource ?? "Arc Network"}
-                </span>
+            {(result.arcReputation || result.arcValidations) ? (
+              <div className="mt-4 grid gap-4 lg:grid-cols-2">
+                <ArcRegistryPanel signal={result.arcReputation} />
+                <ArcRegistryPanel signal={result.arcValidations} />
               </div>
+            ) : null}
+          </section>
 
-              {identityEstimation ? (
-                <>
-                  <dl className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
-                    {[
-                      ["Estimated Identity", identityEstimation.estimatedUserType],
-                      ["Probability", `${identityEstimation.probability}%`],
-                      ["Confidence", identityEstimation.confidence],
-                      [
-                        "Declared Identity",
-                        identityEstimation.declaredUserType &&
-                        identityEstimation.declaredUserType !== "unknown"
-                          ? identityEstimation.declaredUserType
-                          : "Not declared"
-                      ],
-                      ["Identity Match", identityEstimation.identityMatch]
-                    ].map(([label, value]) => (
-                      <div key={label} className="rounded-lg border border-arc-border bg-black/20 p-3">
-                        <dt className="text-xs text-slate-500">{label}</dt>
-                        <dd className="mt-1 text-sm font-semibold text-white">{value}</dd>
-                      </div>
-                    ))}
-                  </dl>
-
-                  <div className="mt-4 grid gap-2 lg:grid-cols-2">
-                    {identityEstimation.signals.map((signal) => (
-                      <div
-                        key={signal.label}
-                        className="rounded-lg border border-arc-border bg-black/20 p-3"
-                      >
-                        <div className="flex items-center justify-between gap-3">
-                          <p className="text-sm font-semibold text-white">{signal.label}</p>
-                          <span className="rounded-full border border-slate-500/40 px-2 py-1 text-xs text-slate-300">
-                            {signal.result}
-                          </span>
-                        </div>
-                        <p className="mt-2 text-xs leading-5 text-slate-500">{signal.explanation}</p>
-                      </div>
-                    ))}
-                  </div>
-                </>
-              ) : (
-                <p className="mt-4 rounded-lg border border-slate-500/30 bg-black/20 p-3 text-sm text-slate-400">
-                  No Arc Network estimation is available for this wallet yet.
-                </p>
-              )}
-            </div>
-          ) : null}
-
-          {(result.arcReputation || result.arcValidations) ? (
-            <div className="grid gap-4 lg:grid-cols-2">
-              <ArcRegistryPanel signal={result.arcReputation} />
-              <ArcRegistryPanel signal={result.arcValidations} />
-            </div>
-          ) : null}
-
-          <dl className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-            {[
-              ["Financial Behavior Score", result.scores?.financialBehaviorScore ?? result.reputationScore],
-              ["Risk Score", result.scores?.riskScore ?? result.financialRiskScore],
-              ["Risk Tier", result.scores?.riskTier ?? result.riskTier],
-              ["Confidence", result.scores?.confidenceLevel ?? result.confidenceLevel],
-              [
-                "Completed Volume",
-                formatUSDC(result.activity?.totalCompletedVolumeUSDC ?? result.metrics.totalVolumeUSDC)
-              ],
-              ["Indexed network actions", result.activity?.completedActions ?? 0],
-              ["Last Activity", formatDate(result.activity?.lastActivity ?? result.lastActivity)],
-              ["Activity Level", result.activity?.activityLevel ?? "Unknown"]
-            ].map(([label, value]) => (
-              <div key={label} className="rounded-lg border border-arc-border bg-white/[0.03] p-3">
-                <dt className="text-xs text-slate-500">{label}</dt>
-                <dd className="mt-1 text-base font-semibold text-white">
-                  {typeof value === "number" || value === null || value === undefined
-                    ? formatNullableScore(value)
-                    : value}
-                </dd>
-              </div>
-            ))}
-          </dl>
-
-          <div>
-            <p className="text-sm font-semibold text-white">Activity Profile</p>
-            <dl className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
-              {[
-                ["Network transactions", result.activity?.successfulPayments ?? result.metrics.successfulPayments],
-                ["Failed payments", result.activity?.failedPayments ?? 0],
-                ["Resources purchased", result.activity?.resourcesPurchased ?? result.metrics.resourcesPurchased],
-                ["Resources downloaded", result.activity?.resourcesDownloaded ?? result.metrics.resourcesDownloaded],
-                ["Jobs created", result.activity?.requestsCreated ?? 0],
-                [
-                  "Protected transactions funded",
-                  result.activity?.protectedTransactionsFunded ??
-                    result.metrics.protectedTransactionsFunded ??
-                    result.metrics.escrowsFunded
-                ],
-                ["Deliverables submitted", result.activity?.deliveriesSubmitted ?? 0],
-                ["Funds released", result.activity?.fundsReleased ?? result.metrics.fundsReleased],
-                ["Unique counterparties", result.activity?.uniqueCounterparties ?? 0],
-                [
-                  "Average transaction",
-                  formatUSDC(result.activity?.averageTransactionAmountUSDC)
-                ],
-                ["Average actions/day", result.activity?.averageActionsPerDay ?? "0.0"],
-                [
-                  "Days since last activity",
-                  formatDaysSinceLastActivity(result.activity?.daysSinceLastActivity)
-                ],
-                ["Evidence count", result.activity?.evidenceCount ?? result.metrics.evidenceCount]
-              ].map(([label, value]) => (
-                <div key={label} className="flex justify-between gap-3 border-b border-arc-border/60 py-2">
-                  <dt className="text-slate-500">{label}</dt>
-                  <dd className="font-medium text-slate-200">{value}</dd>
-                </div>
-              ))}
-            </dl>
-          </div>
-
-          <div className="grid gap-4 lg:grid-cols-2">
-            <div>
-              <p className="text-sm font-semibold text-white">Behavioral Signals</p>
-              <div className="mt-3 grid gap-2">
+          <section className="grid gap-3">
+            <p className="text-sm font-semibold text-white">Detailed Breakdown</p>
+            <DetailSection title="Behavioral signals">
+              <div className="grid gap-2 lg:grid-cols-2">
                 {getVisibleBehavioralSignals(result).map((signal) => (
                   <div
                     key={signal.label}
-                    className="rounded-lg border border-arc-border bg-white/[0.03] p-3"
+                    className="rounded-lg border border-arc-border bg-black/20 p-3"
                   >
                     <div className="flex items-center justify-between gap-3">
                       <p className="font-medium text-white">{signal.label}</p>
@@ -733,15 +1077,14 @@ export function ReputationLookup() {
                   </div>
                 ))}
               </div>
-            </div>
+            </DetailSection>
 
-            <div>
-              <p className="text-sm font-semibold text-white">Risk Signals</p>
-              <div className="mt-3 grid gap-2">
+            <DetailSection title="Risk signals">
+              <div className="grid gap-2">
                 {(result.riskSignals ?? []).map((signal) => (
                   <div
                     key={signal.label}
-                    className="rounded-lg border border-arc-border bg-white/[0.03] p-3"
+                    className="rounded-lg border border-arc-border bg-black/20 p-3"
                   >
                     <div className="flex items-center justify-between gap-3">
                       <p className="font-medium text-white">{signal.label}</p>
@@ -753,8 +1096,115 @@ export function ReputationLookup() {
                   </div>
                 ))}
               </div>
-            </div>
-          </div>
+            </DetailSection>
+
+            <DetailSection
+              title="Human / Agent signal breakdown"
+              description="Explainable estimation signals. This is not identity verification."
+            >
+              {showIdentityEstimation && identityEstimation ? (
+                <div className="grid gap-2 lg:grid-cols-2">
+                  {identityEstimation.signals.map((signal) => (
+                    <div
+                      key={signal.label}
+                      className="rounded-lg border border-arc-border bg-black/20 p-3"
+                    >
+                      <div className="flex items-center justify-between gap-3">
+                        <p className="text-sm font-semibold text-white">{signal.label}</p>
+                        <span className="rounded-full border border-slate-500/40 px-2 py-1 text-xs text-slate-300">
+                          {signal.result}
+                        </span>
+                      </div>
+                      <p className="mt-2 text-xs leading-5 text-slate-500">{signal.explanation}</p>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <p className="rounded-lg border border-slate-500/30 bg-black/20 p-3 text-sm text-slate-400">
+                  Human / Agent Estimation is not available for this wallet.
+                </p>
+              )}
+            </DetailSection>
+
+            {result.trustSnapshot ? (
+              <DetailSection
+                title="Trust Snapshot details"
+                description="Signed off-chain snapshot generated automatically during wallet lookup."
+              >
+                <dl className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                  {[
+                    ["Snapshot ID", result.trustSnapshot.id],
+                    ["Trust score", result.trustSnapshot.trustScore ?? "Unavailable"],
+                    ["Analysis Confidence", result.trustSnapshot.confidence],
+                    [
+                      "Publication Eligibility",
+                      result.trustSnapshot.publicationEligibilityReason ?? "Unavailable"
+                    ],
+                    ["Signature status", getTrustSnapshotSignatureStatusLabel(result.trustSnapshot.signatureStatus)],
+                    ["Signer", result.trustSnapshot.signerAddress ?? "Unavailable"],
+                    ["Schema version", result.trustSnapshot.schemaVersion ?? "Unavailable"],
+                    ["Engine", result.trustSnapshot.engineVersion],
+                    ["Created", formatDate(result.trustSnapshot.createdAt)],
+                    ["Expires", formatDate(result.trustSnapshot.expiresAt)],
+                    ["Evidence source", result.trustSnapshot.evidenceSource],
+                    ["Published", result.trustSnapshot.publishedAt ? formatDate(result.trustSnapshot.publishedAt) : "Not published"]
+                  ].map(([label, value]) => (
+                    <MetricCard key={String(label)} label={String(label)} value={value} />
+                  ))}
+                </dl>
+                <details className="mt-3 rounded-lg border border-arc-border bg-black/20 p-3">
+                  <summary className="cursor-pointer text-xs font-semibold text-slate-300">
+                    Signed payload / technical signature data
+                  </summary>
+                  <p className="mt-3 break-all text-xs text-slate-400">
+                    Report hash: <span className="text-slate-200">{result.trustSnapshot.reportHash}</span>
+                  </p>
+                  <p className="mt-3 break-all text-xs text-slate-400">
+                    Signature: <span className="text-slate-200">{result.trustSnapshot.signature ?? "Unavailable"}</span>
+                  </p>
+                  <p className="mt-3 break-all text-xs text-slate-400">
+                    Signed payload:{" "}
+                    <span className="text-slate-200">{result.trustSnapshot.signedPayload ?? "Unavailable"}</span>
+                  </p>
+                </details>
+              </DetailSection>
+            ) : null}
+
+            <DetailSection title="Activity and API / SDK details">
+              <dl className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+                {[
+                  ["Network transactions", result.activity?.successfulPayments ?? result.metrics.successfulPayments],
+                  ["Failed payments", result.activity?.failedPayments ?? 0],
+                  ["Resources purchased", result.activity?.resourcesPurchased ?? result.metrics.resourcesPurchased],
+                  ["Resources downloaded", result.activity?.resourcesDownloaded ?? result.metrics.resourcesDownloaded],
+                  ["Jobs created", result.activity?.requestsCreated ?? 0],
+                  [
+                    "Protected transactions funded",
+                    result.activity?.protectedTransactionsFunded ??
+                      result.metrics.protectedTransactionsFunded ??
+                      result.metrics.escrowsFunded
+                  ],
+                  ["Deliverables submitted", result.activity?.deliveriesSubmitted ?? 0],
+                  ["Funds released", result.activity?.fundsReleased ?? result.metrics.fundsReleased],
+                  ["Unique counterparties", result.activity?.uniqueCounterparties ?? 0],
+                  ["Average transaction", formatUSDC(result.activity?.averageTransactionAmountUSDC)],
+                  ["Average actions/day", result.activity?.averageActionsPerDay ?? "0.0"],
+                  ["Days since last activity", formatDaysSinceLastActivity(result.activity?.daysSinceLastActivity)],
+                  ["Evidence count", result.activity?.evidenceCount ?? result.metrics.evidenceCount],
+                  ["Coverage", breakdown.network?.metadata?.coverage?.blocksAnalyzed
+                    ? `${breakdown.network.metadata.coverage.blocksAnalyzed} blocks; full history: ${
+                        breakdown.network.metadata.coverage.fullHistory ? "yes" : "no"
+                      }`
+                    : "Unavailable"]
+                ].map(([label, value]) => (
+                  <div key={label} className="flex justify-between gap-3 border-b border-arc-border/60 py-2">
+                    <dt className="text-slate-500">{label}</dt>
+                    <dd className="font-medium text-slate-200">{value}</dd>
+                  </div>
+                ))}
+              </dl>
+            </DetailSection>
+          </section>
         </div>
       ) : null}
     </div>

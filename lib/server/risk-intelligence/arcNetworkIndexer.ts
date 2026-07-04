@@ -40,6 +40,8 @@ export type ArcNetworkSnapshot = {
   toBlock: number;
   indexedAt: string;
   cacheSource: "live_index" | "postgres_cache";
+  accountCode?: string;
+  isContractAccount?: boolean;
   arcscanStats?: ArcscanAddressStats | null;
 };
 
@@ -188,9 +190,10 @@ export async function indexArcNetworkSnapshot(
   if (cached) return cached;
 
   const provider = new JsonRpcProvider(rpcUrl, ARC_TESTNET_CHAIN_ID);
-  const [latestBlock, balance, arcscanStats] = await Promise.all([
+  const [latestBlock, balance, accountCode, arcscanStats] = await Promise.all([
     provider.getBlockNumber(),
     provider.getBalance(normalizedWallet),
+    provider.getCode(normalizedWallet),
     getArcscanAddressStats(normalizedWallet)
   ]);
   const fromBlock = Math.max(0, latestBlock - Math.max(1, defaultBlockWindow));
@@ -245,6 +248,8 @@ export async function indexArcNetworkSnapshot(
     toBlock: latestBlock,
     indexedAt: new Date().toISOString(),
     cacheSource: "live_index",
+    accountCode,
+    isContractAccount: accountCode !== "0x",
     arcscanStats
   };
 

@@ -18,10 +18,18 @@ function readUseIndexedData(request: Request): boolean {
   return value !== "false";
 }
 
+function readIncludeTrustSnapshot(request: Request): boolean {
+  const value = new URL(request.url).searchParams.get("includeTrustSnapshot");
+  return value !== "false";
+}
+
 export async function GET(request: Request, context: RiskWalletContext) {
   const { wallet } = await context.params;
   const source = new URL(request.url).searchParams.get("source");
-  const options = { useIndexedData: readUseIndexedData(request) };
+  const options = {
+    useIndexedData: readUseIndexedData(request),
+    includeTrustSnapshot: readIncludeTrustSnapshot(request)
+  };
 
   if (!isAddress(wallet)) {
     return NextResponse.json(
@@ -31,7 +39,7 @@ export async function GET(request: Request, context: RiskWalletContext) {
   }
 
   if (source === "internal" || source === "knowledge_exchange") {
-    return NextResponse.json(toPublicRiskProfileResponse(await getRiskProfileAsync(wallet)));
+    return NextResponse.json(toPublicRiskProfileResponse(await getRiskProfileAsync(wallet, options)));
   }
 
   if (source === "arc_network") {

@@ -79,7 +79,9 @@ export async function getResourceRatingsAsync(resourceId: string): Promise<Resou
     `,
     [resourceId]
   );
-  return rows.map((row) => row.data);
+  return rows.length > 0
+    ? rows.map((row) => row.data)
+    : getMemoryRatings().filter((rating) => rating.resourceId === resourceId);
 }
 
 export async function getResourceRatingSummaryAsync(resourceId: string): Promise<RatingSummary> {
@@ -117,7 +119,13 @@ export async function getUserResourceRatingAsync({
     `,
     [resourceId, normalizedAddress]
   );
-  return rows[0]?.data ?? null;
+  return rows[0]?.data ?? (
+    getMemoryRatings().find(
+      (rating) =>
+        rating.resourceId === resourceId &&
+        normalizeAddress(rating.walletAddress) === normalizedAddress
+    ) ?? null
+  );
 }
 
 export async function saveResourceRatingAsync({
@@ -157,6 +165,16 @@ export async function saveResourceRatingAsync({
     globalForRatings.knowledgeExchangeServerRatings = ratings;
     return nextRating;
   }
+
+  const ratings = getMemoryRatings().filter(
+    (item) =>
+      !(
+        item.resourceId === resourceId &&
+        normalizeAddress(item.walletAddress) === normalizedAddress
+      )
+  );
+  ratings.push(nextRating);
+  globalForRatings.knowledgeExchangeServerRatings = ratings;
 
   await ensureDbRatingsSeeded();
   await pgQuery(

@@ -305,7 +305,9 @@ export async function getServerResourcesAsync(): Promise<InstantResource[]> {
   const rows = await pgQuery<{ data: InstantResource }>(
     "SELECT data FROM resources ORDER BY COALESCE((data->>'featured')::boolean, false) DESC, created_at DESC"
   );
-  return rows.map((row) => withArcNativeResource(row.data));
+  return rows.length > 0
+    ? rows.map((row) => withArcNativeResource(row.data))
+    : getServerResources();
 }
 
 export function getServerResourceById(id: string): InstantResource | undefined {
@@ -322,7 +324,7 @@ export async function getServerResourceByIdAsync(
     "SELECT data FROM resources WHERE id = $1 LIMIT 1",
     [id]
   );
-  return rows[0]?.data ? withArcNativeResource(rows[0].data) : undefined;
+  return rows[0]?.data ? withArcNativeResource(rows[0].data) : getServerResourceById(id);
 }
 
 export function publishServerResource(
@@ -380,7 +382,9 @@ export async function getServerRequestsAsync(): Promise<AgentRequestDraft[]> {
   const rows = await pgQuery<{ data: AgentRequestDraft }>(
     "SELECT data FROM requests ORDER BY created_at DESC"
   );
-  return rows.map((row) => withArcNativeRequest(row.data));
+  return rows.length > 0
+    ? rows.map((row) => withArcNativeRequest(row.data))
+    : getServerRequests();
 }
 
 export function createServerRequest(input: Omit<AgentRequestDraft, "id" | "status" | "createdAt">) {
@@ -502,7 +506,7 @@ export async function submitServerRequestDeliveryAsync(
   );
   const request = rows[0]?.data;
 
-  if (!request) return null;
+  if (!request) return submitServerRequestDelivery(input);
 
   getStore().requests = getStore().requests.filter((item) => item.id !== request.id);
   getStore().requests.unshift(request);

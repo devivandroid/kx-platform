@@ -46,7 +46,7 @@ export default function PublishResourcePage() {
       deliveryType: "inline",
       requirements: "",
       deadline: "",
-      userType: "HUMAN",
+      userType: "",
       entityType: "INDIVIDUAL",
       participantType: "human",
       participantName: "",
@@ -154,11 +154,11 @@ export default function PublishResourcePage() {
         accessType: "instant",
         deliveryType,
         sellerName: values.participantName.trim() || undefined,
-        userType: isUserType(values.userType) ? values.userType : "HUMAN",
+        userType: isUserType(values.userType) ? values.userType : undefined,
         entityType: isEntityType(values.entityType) ? values.entityType : "INDIVIDUAL",
-        participantType: getLegacyParticipantType(
-          isUserType(values.userType) ? values.userType : "HUMAN"
-        ),
+        participantType: isUserType(values.userType)
+          ? getLegacyParticipantType(values.userType)
+          : undefined,
         participantName: values.participantName.trim() || undefined,
         operatorAddress: operatorAddress || undefined,
         arcIdentityId: values.arcIdentityId.trim() || undefined,
@@ -292,6 +292,7 @@ export default function PublishResourcePage() {
             {...register("userType")}
             className="w-full min-w-0 rounded-lg border border-arc-border bg-black/30 px-4 py-3 text-white outline-none transition focus:border-arc-blue"
           >
+            <option value="">Not declared</option>
             {userTypeValues.map((value) => (
               <option key={value} value={value}>
                 {value === "AGENT" ? "Agent" : "Human"}

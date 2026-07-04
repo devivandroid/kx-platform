@@ -8,9 +8,15 @@ export type RiskGuardDecision = "allow" | "review" | "block";
 export type RiskProfileStatus = "active" | "limited" | "no_data";
 export type UnknownWalletBehavior = "allow" | "review" | "block";
 export type RiskDataSource = "knowledge_exchange" | "arc_network" | "combined" | "no_data";
-export type EstimatedUserType = "Likely Human" | "Likely Agent" | "Unknown";
+export type EstimatedUserType =
+  | "Likely Human"
+  | "Leaning Human"
+  | "Likely Agent"
+  | "Leaning Agent"
+  | "Mixed / Inconclusive"
+  | "Unknown";
 export type IdentitySignalResult = "Human" | "Agent-like" | "Unknown";
-export type IdentityMatchStatus = "OK" | "Mismatch" | "Not declared";
+export type IdentityMatchStatus = "OK" | "Mismatch" | "Not available";
 export type ArcRegistryStatus =
   | "found"
   | "not_configured"
@@ -18,6 +24,54 @@ export type ArcRegistryStatus =
   | "method_unavailable"
   | "not_found"
   | "unavailable";
+export type TrustAttestationStatus = "not_published" | "eligible" | "published" | "skipped";
+
+export type TrustSnapshot = {
+  id: string;
+  wallet: string;
+  riskScore: number | null;
+  trustScore?: number | null;
+  riskTier: RiskTier;
+  humanAgentEstimation?: EstimatedUserType;
+  humanProbability?: number | null;
+  confidence: ConfidenceLevel;
+  publicationEligibilityReason?: string;
+  evidenceSource: string;
+  signalsSummary: string[];
+  schemaVersion: string;
+  engineVersion: string;
+  createdAt: string;
+  expiresAt: string;
+  reportHash: string;
+  signedPayload?: string | null;
+  signature?: string | null;
+  signerAddress?: string | null;
+  signingAlgorithm?: string | null;
+  signedAt?: string | null;
+  signatureStatus?: "verified" | "unsigned" | "not_configured" | "invalid";
+  arcIdentityId?: string | null;
+  arcJobId?: string | null;
+  attestationTxHash?: string | null;
+  attestationRegistryAddress?: string | null;
+  attestationStatus: TrustAttestationStatus;
+  publishedAt?: string | null;
+  revokedAt?: string | null;
+  revocationReason?: string | null;
+  onChainAttestation?: OnChainTrustAttestation | null;
+};
+
+export type OnChainTrustAttestation = {
+  id: string;
+  wallet: string;
+  reportHash: string;
+  riskTier: string;
+  humanProbability: number;
+  confidence: string;
+  engineVersion: string;
+  evidenceURI: string;
+  timestamp: string;
+  isEmpty?: boolean;
+};
 
 export type ArcRegistrySignal = {
   source: "Arc Reputation" | "Arc Validations";
@@ -60,6 +114,7 @@ export interface RiskProfile {
   participant: {
     type: RiskParticipantType;
     userType?: "HUMAN" | "AGENT" | "unknown";
+    kxDeclaredUserType?: "HUMAN" | "AGENT" | "unknown";
     entityType?: "INDIVIDUAL" | "BUSINESS" | "ORGANIZATION" | "unknown";
     name?: string;
     operatorAddress?: string;
@@ -68,6 +123,7 @@ export interface RiskProfile {
   };
   scores: {
     financialBehaviorScore: number | null;
+    trustScore?: number | null;
     riskScore: number | null;
     riskTier: RiskTier;
     confidenceLevel: ConfidenceLevel;
@@ -108,6 +164,9 @@ export interface RiskProfile {
     probability: number;
     confidence: ConfidenceLevel;
     evidenceSource: "Arc Network";
+    kxDeclaredUserType?: "HUMAN" | "AGENT" | "unknown";
+    arcDeclaredIdentity?: string | null;
+    arcDeclaredUserType?: "HUMAN" | "AGENT" | "unknown";
     declaredUserType?: "HUMAN" | "AGENT" | "unknown";
     identityMatch: IdentityMatchStatus;
     cacheSource?: "live_estimation" | "postgres_cache";
@@ -119,6 +178,7 @@ export interface RiskProfile {
     }>;
     limitations: string[];
   };
+  trustSnapshot?: TrustSnapshot;
   arcReputation?: ArcRegistrySignal;
   arcValidations?: ArcRegistrySignal;
   behavioralSignals: Array<{

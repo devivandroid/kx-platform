@@ -25,6 +25,7 @@ export type {
 export type RiskSdkParticipant = {
   type: RiskParticipantType;
   userType?: "HUMAN" | "AGENT" | "unknown";
+  kxDeclaredUserType?: "HUMAN" | "AGENT" | "unknown";
   entityType?: "INDIVIDUAL" | "BUSINESS" | "ORGANIZATION" | "unknown";
   name: string | null;
   operatorAddress: string | null;
@@ -34,6 +35,7 @@ export type RiskSdkParticipant = {
 
 export type RiskSdkScores = {
   financialBehaviorScore: number | null;
+  trustScore?: number | null;
   riskScore: number | null;
   riskTier: RiskTier;
   confidenceLevel: ConfidenceLevel;
@@ -86,12 +88,22 @@ export type RiskSdkRiskSignal = {
 };
 
 export type RiskSdkIdentityEstimation = {
-  estimatedUserType: "Likely Human" | "Likely Agent" | "Unknown";
+  estimatedUserType:
+    | "Likely Human"
+    | "Leaning Human"
+    | "Likely Agent"
+    | "Leaning Agent"
+    | "Mixed / Inconclusive"
+    | "Unknown";
   probability: number;
   confidence: ConfidenceLevel;
+  publicationEligibilityReason?: string;
   evidenceSource: "Arc Network";
+  kxDeclaredUserType?: "HUMAN" | "AGENT" | "unknown";
+  arcDeclaredIdentity?: string | null;
+  arcDeclaredUserType?: "HUMAN" | "AGENT" | "unknown";
   declaredUserType?: "HUMAN" | "AGENT" | "unknown";
-  identityMatch: "OK" | "Mismatch" | "Not declared";
+  identityMatch: "OK" | "Mismatch" | "Not available";
   cacheSource?: "live_estimation" | "postgres_cache";
   lastEstimatedAt?: string;
   signals: Array<{
@@ -125,6 +137,57 @@ export type RiskSdkArcRegistrySignal = {
   message?: string;
 };
 
+export type RiskSdkTrustAttestationStatus =
+  | "not_published"
+  | "eligible"
+  | "published"
+  | "skipped";
+
+export type RiskSdkTrustSnapshot = {
+  id: string;
+  wallet: string;
+  riskScore: number | null;
+  riskTier: RiskTier;
+  humanAgentEstimation?: "Likely Human" | "Likely Agent" | "Mixed / Inconclusive" | "Unknown";
+  humanProbability?: number | null;
+  confidence: ConfidenceLevel;
+  evidenceSource: string;
+  signalsSummary: string[];
+  schemaVersion: string;
+  engineVersion: string;
+  createdAt: string;
+  expiresAt: string;
+  reportHash: string;
+  signedPayload?: string | null;
+  signature?: string | null;
+  signerAddress?: string | null;
+  signingAlgorithm?: string | null;
+  signedAt?: string | null;
+  signatureStatus?: "verified" | "unsigned" | "not_configured" | "invalid";
+  arcIdentityId?: string | null;
+  arcJobId?: string | null;
+  attestationTxHash?: string | null;
+  attestationRegistryAddress?: string | null;
+  attestationStatus: RiskSdkTrustAttestationStatus;
+  publishedAt?: string | null;
+  revokedAt?: string | null;
+  revocationReason?: string | null;
+  onChainAttestation?: RiskSdkOnChainTrustAttestation | null;
+};
+
+export type RiskSdkOnChainTrustAttestation = {
+  id: string;
+  wallet: string;
+  reportHash: string;
+  riskTier: string;
+  humanProbability: number;
+  confidence: string;
+  engineVersion: string;
+  evidenceURI: string;
+  timestamp: string;
+  isEmpty?: boolean;
+};
+
 export type RiskGuardPolicy = {
   maxRiskScore?: number;
   allowedRiskTiers?: RiskTier[];
@@ -141,7 +204,21 @@ export type RiskProfileRequestOptions = {
   useIndexedData?: boolean;
 };
 
+export type TrustSnapshotPublishOptions = {
+  snapshotId?: string;
+  mode?: "eligible" | "test";
+};
+
 export type RiskGuardDecision = "allow" | "review" | "block";
+
+export type TrustPolicyDecision = "ALLOW" | "REVIEW" | "BLOCK";
+export type TrustPolicyRiskTier = "LOW" | "MEDIUM" | "HIGH" | "UNKNOWN";
+
+export type TrustPolicyId =
+  | "basic-safe"
+  | "human-preferred"
+  | "agent-safe"
+  | "enterprise-strict";
 
 export type RiskGuardCheck = {
   label: string;
@@ -166,6 +243,7 @@ export type RiskProfileResponse = {
   activity: RiskSdkActivity;
   metadata?: RiskSdkMetadata;
   identityEstimation?: RiskSdkIdentityEstimation;
+  trustSnapshot?: RiskSdkTrustSnapshot;
   arcReputation?: RiskSdkArcRegistrySignal;
   arcValidations?: RiskSdkArcRegistrySignal;
   behavioralSignals: RiskSdkBehavioralSignal[];
@@ -191,6 +269,7 @@ export type RiskSummaryResponse = {
   participant: RiskSdkParticipant;
   summary: {
     financialBehaviorScore: number | null;
+    trustScore?: number | null;
     riskScore: number | null;
     riskTier: RiskTier;
     confidenceLevel: ConfidenceLevel;
@@ -201,6 +280,7 @@ export type RiskSummaryResponse = {
     evidenceCount: number;
   };
   identityEstimation?: RiskSdkIdentityEstimation;
+  trustSnapshot?: RiskSdkTrustSnapshot;
   arcReputation?: RiskSdkArcRegistrySignal;
   arcValidations?: RiskSdkArcRegistrySignal;
   limitations: string[];
@@ -218,6 +298,7 @@ export type RiskSignalsResponse = {
   message?: string;
   recommendation?: string;
   identityEstimation?: RiskSdkIdentityEstimation;
+  trustSnapshot?: RiskSdkTrustSnapshot;
   arcReputation?: RiskSdkArcRegistrySignal;
   arcValidations?: RiskSdkArcRegistrySignal;
   behavioralSignals: RiskSdkBehavioralSignal[];
@@ -262,6 +343,76 @@ export type RiskGuardResponse = {
     participant: RiskSdkParticipant;
   };
   checks: RiskGuardCheck[];
+  limitations: string[];
+};
+
+export type TrustPolicyEvaluationOptions = {
+  counterpartyWallet?: string;
+  amountUSDC?: string | number;
+  context?: string;
+};
+
+export type TrustPolicyEvaluationResponse = {
+  ok: true;
+  wallet: string;
+  counterpartyWallet?: string;
+  amountUSDC?: string;
+  context?: string;
+  decision: TrustPolicyDecision;
+  policyId: TrustPolicyId;
+  policyName: string;
+  reasons: string[];
+  failedRules: string[];
+  passedRules: string[];
+  criticalSignals: string[];
+  trustSnapshot?: RiskSdkTrustSnapshot;
+  reportHash: string | null;
+  signatureStatus: RiskSdkTrustSnapshot["signatureStatus"] | null;
+  profile: {
+    rawRiskTier: RiskTier;
+    policyRiskTier: TrustPolicyRiskTier;
+    riskScore: number | null;
+    confidence: ConfidenceLevel;
+    estimatedIdentity: string;
+    humanProbability: number | null;
+    identityMatch: string;
+  };
+  limitations: string[];
+};
+
+export type RiskTrustSnapshotsResponse = {
+  ok: true;
+  service: string;
+  wallet: string;
+  latest: RiskSdkTrustSnapshot | null;
+  snapshots: RiskSdkTrustSnapshot[];
+  limitations: string[];
+};
+
+export type RiskTrustSnapshotPublishResponse = {
+  ok: true;
+  service: string;
+  wallet: string;
+  snapshot: RiskSdkTrustSnapshot;
+  attestation: RiskSdkOnChainTrustAttestation;
+  txHash: string;
+  explorerUrl: string | null;
+  limitations: string[];
+};
+
+export type RiskTrustAttestationResponse = {
+  ok: true;
+  service: string;
+  attestation: RiskSdkOnChainTrustAttestation | null;
+  limitations: string[];
+};
+
+export type RiskWalletTrustAttestationsResponse = {
+  ok: true;
+  service: string;
+  wallet: string;
+  latest: RiskSdkOnChainTrustAttestation | null;
+  attestations: RiskSdkOnChainTrustAttestation[];
   limitations: string[];
 };
 

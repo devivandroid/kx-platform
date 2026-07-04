@@ -159,26 +159,86 @@ async function replaceTransactionSample(
   }
 }
 
-function getConfidence(totalSignals: number, knownSignals: number): ConfidenceLevel {
-  if (knownSignals >= Math.ceil(totalSignals * 0.7)) return "High";
-  if (knownSignals >= Math.ceil(totalSignals * 0.4)) return "Medium";
+function getConfidence(input: {
+  totalSignals: number;
+  knownSignals: number;
+  timestampedTxCount: number;
+  accountTypeKnown: boolean;
+  strongSignalCount: number;
+}): ConfidenceLevel {
+  if (input.timestampedTxCount < 8) return "Low";
+  if (!input.accountTypeKnown && input.strongSignalCount === 0) return "Low";
+  if (input.knownSignals >= Math.ceil(input.totalSignals * 0.7)) {
+    return input.accountTypeKnown ? "High" : "Medium";
+  }
+  if (input.knownSignals >= Math.ceil(input.totalSignals * 0.4)) return "Medium";
   return "Low";
 }
 
 function getEstimatedIdentity(input: {
   humanVotes: number;
   agentVotes: number;
+  strongHumanSignals: number;
+  strongAgentSignals: number;
+  unknownSignals: number;
+  totalSignals: number;
   knownSignals: number;
 }): { estimatedUserType: IdentityEstimation["estimatedUserType"]; probability: number } {
-  if (input.knownSignals === 0 || input.humanVotes === input.agentVotes) {
+  if (
+    input.knownSignals === 0 ||
+    input.unknownSignals > input.totalSignals * 0.5
+  ) {
     return { estimatedUserType: "Unknown", probability: 50 };
   }
 
-  const winningVotes = Math.max(input.humanVotes, input.agentVotes);
-  const probability = Math.round((winningVotes / input.knownSignals) * 100);
+  if (input.strongAgentSignals >= 2 && input.strongHumanSignals >= 2) {
+    return { estimatedUserType: "Leaning Human", probability: 60 };
+  }
 
+  if (input.strongAgentSignals > 0 && input.strongHumanSignals > 0) {
+    return { estimatedUserType: "Mixed / Inconclusive", probability: 55 };
+  }
+
+  if (input.strongAgentSignals >= 2) {
+    const probability = Math.max(10, 40 - input.strongAgentSignals * 5);
+    return {
+      estimatedUserType: probability <= 30 ? "Likely Agent" : "Leaning Agent",
+      probability
+    };
+  }
+
+  if (input.strongAgentSignals === 1 && input.agentVotes >= 2) {
+    return { estimatedUserType: "Leaning Agent", probability: 40 };
+  }
+
+  if (input.humanVotes === input.agentVotes) {
+    return { estimatedUserType: "Mixed / Inconclusive", probability: 55 };
+  }
+
+  if (input.humanVotes > input.agentVotes) {
+    if (input.strongAgentSignals > 0) {
+      return { estimatedUserType: "Leaning Human", probability: 60 };
+    }
+    if (input.humanVotes < 2) return { estimatedUserType: "Unknown", probability: 50 };
+    if (input.strongHumanSignals >= 2 && input.humanVotes >= 3) {
+      return { estimatedUserType: "Likely Human", probability: Math.min(90, 70 + input.strongHumanSignals * 5) };
+    }
+    if (input.humanVotes >= 2) {
+      return {
+        estimatedUserType: "Leaning Human",
+        probability: Math.min(69, 56 + Math.max(0, input.humanVotes - input.agentVotes) * 5)
+      };
+    }
+    return {
+      estimatedUserType: "Mixed / Inconclusive",
+      probability: Math.min(65, 55 + Math.max(0, input.humanVotes - input.agentVotes) * 5)
+    };
+  }
+
+  if (input.agentVotes < 2) return { estimatedUserType: "Mixed / Inconclusive", probability: 50 };
+  const probability = Math.max(35, 45 - Math.max(0, input.agentVotes - input.humanVotes) * 5);
   return {
-    estimatedUserType: input.agentVotes > input.humanVotes ? "Likely Agent" : "Likely Human",
+    estimatedUserType: probability <= 30 ? "Likely Agent" : "Leaning Agent",
     probability
   };
 }
@@ -187,12 +247,27 @@ function getIdentityMatch(
   declaredUserType: "HUMAN" | "AGENT" | "unknown" | undefined,
   estimatedUserType: IdentityEstimation["estimatedUserType"]
 ): IdentityMatchStatus {
-  if (!declaredUserType || declaredUserType === "unknown" || estimatedUserType === "Unknown") {
-    return "Not declared";
+  if (
+    !declaredUserType ||
+    declaredUserType === "unknown" ||
+    estimatedUserType === "Unknown" ||
+    estimatedUserType === "Mixed / Inconclusive"
+  ) {
+    return "Not available";
   }
 
-  if (declaredUserType === "HUMAN" && estimatedUserType === "Likely Human") return "OK";
-  if (declaredUserType === "AGENT" && estimatedUserType === "Likely Agent") return "OK";
+  if (
+    declaredUserType === "HUMAN" &&
+    (estimatedUserType === "Likely Human" || estimatedUserType === "Leaning Human")
+  ) {
+    return "OK";
+  }
+  if (
+    declaredUserType === "AGENT" &&
+    (estimatedUserType === "Likely Agent" || estimatedUserType === "Leaning Agent")
+  ) {
+    return "OK";
+  }
   return "Mismatch";
 }
 
@@ -416,11 +491,19 @@ function buildSignals(
   const blocksAnalyzed = snapshot.toBlock - snapshot.fromBlock + 1;
 
   return [
-    signal(
-      "Account Type",
-      "Unknown",
-      "The current adapter does not classify EOA versus contract accounts for identity estimation."
-    ),
+    snapshot.isContractAccount === undefined
+      ? signal(
+          "Account Type",
+          "Unknown",
+          "Arc RPC account code was not available for this estimate."
+        )
+      : signal(
+          "Account Type",
+          snapshot.isContractAccount ? "Agent-like" : "Human",
+          snapshot.isContractAccount
+            ? "Arc RPC returned account code for this wallet."
+            : "Arc RPC returned no account code for this wallet."
+        ),
     getCircadianSignal(currentSample),
     signal(
       "Transaction Frequency",
@@ -443,48 +526,110 @@ function buildSignals(
     getBehaviorStabilitySignal(currentSample, previousSample),
     signal(
       "Network Coverage",
-      blocksAnalyzed >= 100_000 ? "Human" : "Unknown",
+      "Unknown",
       `${blocksAnalyzed} Arc blocks were analyzed. This is coverage evidence, not identity proof.`
     )
   ];
 }
 
+function getScoredSignals(signals: IdentityEstimation["signals"]) {
+  return signals.filter((item) => item.label !== "Network Coverage");
+}
+
+function isStrongHumanSignal(signalItem: IdentityEstimation["signals"][number]): boolean {
+  if (signalItem.result !== "Human") return false;
+  return [
+    "Destination Concentration",
+    "Counterparty Diversity",
+    "Transaction Timing Variance",
+    "Activity Consistency"
+  ].includes(signalItem.label);
+}
+
+function isStrongAgentSignal(
+  signalItem: IdentityEstimation["signals"][number],
+  currentSample: ArcscanWalletTransactionSample[]
+): boolean {
+  if (signalItem.result !== "Agent-like") return false;
+  if (signalItem.label === "Gas Fee Pattern" && currentSample.length >= 30) return true;
+  return [
+    "Transaction Frequency",
+    "Destination Concentration",
+    "Counterparty Diversity",
+    "Transaction Timing Variance",
+    "Activity Consistency",
+    "Behavior Stability"
+  ].includes(signalItem.label);
+}
+
 export async function estimateWalletIdentityFromArcNetwork(
   wallet: string,
   options: ArcNetworkIndexOptions & {
+    snapshot?: ArcNetworkSnapshot;
+    kxDeclaredUserType?: "HUMAN" | "AGENT" | "unknown";
+    arcDeclaredIdentity?: string | null;
+    arcDeclaredUserType?: "HUMAN" | "AGENT" | "unknown";
     declaredUserType?: "HUMAN" | "AGENT" | "unknown";
   } = {}
 ): Promise<IdentityEstimation> {
+  const kxDeclaredUserType =
+    options.kxDeclaredUserType ?? options.declaredUserType ?? "unknown";
+  const arcDeclaredUserType = options.arcDeclaredUserType ?? "unknown";
+  const comparableDeclaredUserType =
+    kxDeclaredUserType !== "unknown" ? kxDeclaredUserType : arcDeclaredUserType;
   const cached = await getCachedIdentityEstimation(wallet, options);
   if (cached) {
     return {
       ...cached,
-      declaredUserType: options.declaredUserType ?? cached.declaredUserType,
-      identityMatch: getIdentityMatch(options.declaredUserType ?? cached.declaredUserType, cached.estimatedUserType)
+      kxDeclaredUserType,
+      arcDeclaredIdentity: options.arcDeclaredIdentity ?? cached.arcDeclaredIdentity ?? null,
+      arcDeclaredUserType,
+      declaredUserType: kxDeclaredUserType,
+      identityMatch: getIdentityMatch(comparableDeclaredUserType, cached.estimatedUserType)
     };
   }
 
-  const snapshot = await indexArcNetworkSnapshot(wallet, options);
+  const snapshot = options.snapshot ?? await indexArcNetworkSnapshot(wallet, options);
   const previousSample = await getStoredTransactionSample(snapshot.wallet);
   const currentSample = await getArcscanWalletTransactionSample(snapshot.wallet, 50);
   await replaceTransactionSample(snapshot.wallet, currentSample);
   const signals = buildSignals(snapshot, currentSample, previousSample);
-  const humanVotes = signals.filter((item) => item.result === "Human").length;
-  const agentVotes = signals.filter((item) => item.result === "Agent-like").length;
+  const scoredSignals = getScoredSignals(signals);
+  const humanVotes = scoredSignals.filter((item) => item.result === "Human").length;
+  const agentVotes = scoredSignals.filter((item) => item.result === "Agent-like").length;
+  const unknownSignals = scoredSignals.filter((item) => item.result === "Unknown").length;
   const knownSignals = humanVotes + agentVotes;
+  const strongHumanSignals = scoredSignals.filter((item) => isStrongHumanSignal(item)).length;
+  const strongAgentSignals = scoredSignals.filter((item) =>
+    isStrongAgentSignal(item, currentSample)
+  ).length;
   const { estimatedUserType, probability } = getEstimatedIdentity({
     humanVotes,
     agentVotes,
+    strongHumanSignals,
+    strongAgentSignals,
+    unknownSignals,
+    totalSignals: scoredSignals.length,
     knownSignals
   });
-  const confidence = getConfidence(signals.length, knownSignals);
+  const timestampedTxCount = getSortedTimestamps(currentSample).length;
+  const confidence = getConfidence({
+    totalSignals: scoredSignals.length,
+    knownSignals,
+    timestampedTxCount,
+    accountTypeKnown: signals.find((item) => item.label === "Account Type")?.result !== "Unknown",
+    strongSignalCount: strongHumanSignals + strongAgentSignals
+  });
   const estimation: IdentityEstimation = {
     estimatedUserType,
     probability,
     confidence,
     evidenceSource: "Arc Network",
-    declaredUserType: options.declaredUserType ?? "unknown",
-    identityMatch: getIdentityMatch(options.declaredUserType, estimatedUserType),
+    kxDeclaredUserType,
+    arcDeclaredIdentity: options.arcDeclaredIdentity ?? null,
+    arcDeclaredUserType,
+    declaredUserType: kxDeclaredUserType,
+    identityMatch: getIdentityMatch(comparableDeclaredUserType, estimatedUserType),
     cacheSource: "live_estimation",
     lastEstimatedAt: new Date().toISOString(),
     signals,

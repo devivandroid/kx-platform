@@ -6,7 +6,6 @@ import { readArcJob } from "@/lib/server/arc/arcJobs";
 import {
   getEntityTypeFromLegacy,
   getLegacyParticipantType,
-  getUserTypeFromLegacy,
   isEntityType,
   isParticipantType,
   isUserType
@@ -74,12 +73,12 @@ export async function POST(request: NextRequest) {
   const participantType = isParticipantType(body.participantType)
     ? body.participantType
     : undefined;
-  const userType = isUserType(body.userType)
-    ? body.userType
-    : getUserTypeFromLegacy(participantType);
+  const userType = isUserType(body.userType) ? body.userType : undefined;
   const entityType = isEntityType(body.entityType)
     ? body.entityType
-    : getEntityTypeFromLegacy(participantType);
+    : participantType
+      ? getEntityTypeFromLegacy(participantType)
+      : undefined;
   const participantName =
     typeof body.participantName === "string" && body.participantName.trim()
       ? body.participantName.trim()
@@ -112,7 +111,7 @@ export async function POST(request: NextRequest) {
     requesterAddress,
     userType,
     entityType,
-    participantType: participantType ?? getLegacyParticipantType(userType),
+    participantType: participantType ?? (userType ? getLegacyParticipantType(userType) : undefined),
     participantName,
     operatorAddress,
     arcIdentityId,
@@ -129,8 +128,10 @@ export async function POST(request: NextRequest) {
     amountUSDC: String(budgetUSDC),
     metadata: {
       category: draft.category,
-      userType,
-      entityType,
+      userType: userType ?? null,
+      userTypeSource: userType ? "explicit" : null,
+      userTypeExplicit: Boolean(userType),
+      entityType: entityType ?? null,
       participantType: draft.participantType ?? null,
       participantName: participantName ?? null,
       operatorAddress: operatorAddress ?? null,

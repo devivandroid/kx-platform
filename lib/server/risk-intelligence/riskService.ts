@@ -7,6 +7,8 @@ import { getArcNetworkRiskProfile } from "@/lib/server/risk-intelligence/arcNetw
 import { calculateRiskProfile, getUniqueRiskWallets } from "@/lib/server/risk-intelligence/calculateRiskProfile";
 import { getEvents, getEventsAsync } from "@/lib/server/reputation/reputationEventStore";
 import { toRiskProfileApiResponse } from "@/lib/server/risk-intelligence/riskProfileResponse";
+import { getCachedRead } from "@/lib/server/risk-intelligence/requestCache";
+import { createAndStoreTrustSnapshot } from "@/lib/server/risk-intelligence/trustSnapshots";
 import type {
   ConfidenceLevel,
   IdentityMatchStatus,
@@ -45,27 +47,75 @@ export function getRiskProfile(wallet: string): RiskProfile {
   };
 }
 
-export async function getRiskProfileAsync(wallet: string): Promise<RiskProfile> {
-  return enrichWithArcRegistries(wallet, {
+function getCacheWallet(wallet: string): string {
+  return wallet.toLowerCase();
+}
+
+function nowMs(): number {
+  return Date.now();
+}
+
+function logTiming(label: string, timings: Record<string, number>) {
+  if (process.env.NODE_ENV === "production") return;
+  const rendered = Object.entries(timings)
+    .map(([key, value]) => `${key}=${value}ms`)
+    .join(" ");
+  console.debug(`[KX Trust Engine timing] ${label} ${rendered}`);
+}
+
+async function getInternalRiskProfileRaw(wallet: string): Promise<RiskProfile> {
+  return {
     ...calculateRiskProfile(wallet, await getEventsAsync()),
     dataSource: "knowledge_exchange",
     limitations: internalRiskServiceLimitations
+  };
+}
+
+export type RiskProfileBuildOptions = {
+  includeTrustSnapshot?: boolean;
+};
+
+export async function getRiskProfileAsync(
+  wallet: string,
+  options: RiskProfileBuildOptions = {}
+): Promise<RiskProfile> {
+  const includeTrustSnapshot = options.includeTrustSnapshot !== false;
+  return getCachedRead(`risk:internal:${getCacheWallet(wallet)}:${includeTrustSnapshot}`, async () => {
+    const totalStart = nowMs();
+    const [profile, registries] = await Promise.all([
+      getInternalRiskProfileRaw(wallet),
+      readArcRegistries(wallet)
+    ]);
+    const snapshotStart = nowMs();
+    const enriched = {
+      ...profile,
+      ...registries
+    };
+    const result = includeTrustSnapshot ? await attachTrustSnapshot(enriched) : enriched;
+    logTiming("internal_profile", {
+      total: nowMs() - totalStart,
+      snapshot: nowMs() - snapshotStart
+    });
+    return result;
   });
 }
 
-async function enrichWithArcRegistries(
-  wallet: string,
-  profile: RiskProfile
-): Promise<RiskProfile> {
+async function readArcRegistries(wallet: string): Promise<Pick<RiskProfile, "arcReputation" | "arcValidations">> {
   const [arcReputation, arcValidations] = await Promise.all([
     readArcReputation(wallet),
     readArcValidations(wallet)
   ]);
 
   return {
-    ...profile,
     arcReputation,
     arcValidations
+  };
+}
+
+async function attachTrustSnapshot(profile: RiskProfile): Promise<RiskProfile> {
+  return {
+    ...profile,
+    trustSnapshot: await createAndStoreTrustSnapshot(profile)
   };
 }
 
@@ -115,8 +165,25 @@ function combineProfiles(internalProfile: RiskProfile, networkProfile: RiskProfi
   const internalScore = internalProfile.scores.financialBehaviorScore ?? 500;
   const networkScore = networkProfile.scores.financialBehaviorScore ?? 500;
   const financialBehaviorScore = Math.round(internalScore * 0.7 + networkScore * 0.3);
-  const riskScore = Math.max(0, Math.min(100, Math.round((1000 - financialBehaviorScore) / 10)));
-  const riskTier = riskScore <= 24 ? "Low" : riskScore <= 59 ? "Medium" : "High";
+  const internalRiskScore = internalProfile.scores.riskScore;
+  const networkRiskScore = networkProfile.scores.riskScore;
+  const availableRiskScores = [internalRiskScore, networkRiskScore].filter(
+    (value): value is number => typeof value === "number"
+  );
+  const riskScore =
+    availableRiskScores.length === 0
+      ? null
+      : Math.max(
+          5,
+          Math.min(
+            100,
+            Math.round(
+              availableRiskScores.reduce((sum, value) => sum + value, 0) /
+                availableRiskScores.length
+            )
+          )
+        );
+  const riskTier = riskScore === null ? "Unknown" : riskScore <= 24 ? "Low" : riskScore <= 59 ? "Medium" : "High";
   const completedActions =
     internalProfile.activity.completedActions + networkProfile.activity.completedActions;
   const totalVolume =
@@ -135,6 +202,7 @@ function combineProfiles(internalProfile: RiskProfile, networkProfile: RiskProfi
     participant: internalProfile.participant,
     scores: {
       financialBehaviorScore,
+      trustScore: Math.round(financialBehaviorScore / 10),
       riskScore,
       riskTier,
       confidenceLevel: maxConfidence(
@@ -166,9 +234,12 @@ function combineProfiles(internalProfile: RiskProfile, networkProfile: RiskProfi
     identityEstimation: networkProfile.identityEstimation
       ? {
           ...networkProfile.identityEstimation,
-          declaredUserType: internalProfile.participant.userType ?? "unknown",
+          kxDeclaredUserType: internalProfile.participant.kxDeclaredUserType ?? "unknown",
+          arcDeclaredIdentity: internalProfile.participant.arcIdentityId ?? null,
+          arcDeclaredUserType: "unknown" as const,
+          declaredUserType: internalProfile.participant.kxDeclaredUserType ?? "unknown",
           identityMatch: getIdentityMatch(
-            internalProfile.participant.userType,
+            internalProfile.participant.kxDeclaredUserType,
             networkProfile.identityEstimation.estimatedUserType
           )
         }
@@ -195,41 +266,105 @@ function getIdentityMatch(
   declaredUserType: RiskProfile["participant"]["userType"],
   estimatedUserType: NonNullable<RiskProfile["identityEstimation"]>["estimatedUserType"]
 ): IdentityMatchStatus {
-  if (!declaredUserType || declaredUserType === "unknown" || estimatedUserType === "Unknown") {
-    return "Not declared";
+  if (
+    !declaredUserType ||
+    declaredUserType === "unknown" ||
+    estimatedUserType === "Unknown" ||
+    estimatedUserType === "Mixed / Inconclusive"
+  ) {
+    return "Not available";
   }
 
-  if (declaredUserType === "HUMAN" && estimatedUserType === "Likely Human") return "OK";
-  if (declaredUserType === "AGENT" && estimatedUserType === "Likely Agent") return "OK";
+  if (
+    declaredUserType === "HUMAN" &&
+    (estimatedUserType === "Likely Human" || estimatedUserType === "Leaning Human")
+  ) {
+    return "OK";
+  }
+  if (
+    declaredUserType === "AGENT" &&
+    (estimatedUserType === "Likely Agent" || estimatedUserType === "Leaning Agent")
+  ) {
+    return "OK";
+  }
   return "Mismatch";
 }
 
 export type RiskProfileReadOptions = {
   useIndexedData?: boolean;
+  includeTrustSnapshot?: boolean;
 };
 
 export async function getArcNetworkRiskProfileAsync(
   wallet: string,
   options: RiskProfileReadOptions = {}
 ): Promise<RiskProfile> {
-  return enrichWithArcRegistries(wallet, await getArcNetworkRiskProfile(wallet, options));
+  const includeTrustSnapshot = options.includeTrustSnapshot !== false;
+  return getCachedRead(
+    `risk:network:${getCacheWallet(wallet)}:${options.useIndexedData !== false}:${includeTrustSnapshot}`,
+    async () => {
+      const totalStart = nowMs();
+      const [profile, registries] = await Promise.all([
+        getArcNetworkRiskProfile(wallet, options),
+        readArcRegistries(wallet)
+      ]);
+      const snapshotStart = nowMs();
+      const enriched = {
+        ...profile,
+        ...registries
+      };
+      const result = includeTrustSnapshot ? await attachTrustSnapshot(enriched) : enriched;
+      logTiming("network_profile", {
+        total: nowMs() - totalStart,
+        snapshot: nowMs() - snapshotStart
+      });
+      return result;
+    }
+  );
 }
 
 export async function getCombinedRiskProfileAsync(
   wallet: string,
   options: RiskProfileReadOptions = {}
 ): Promise<RiskProfile> {
-  const [internalProfile, networkProfile] = await Promise.all([
-    getRiskProfileAsync(wallet),
-    getArcNetworkRiskProfileAsync(wallet, options)
-  ]);
+  const includeTrustSnapshot = options.includeTrustSnapshot !== false;
+  return getCachedRead(
+    `risk:combined:${getCacheWallet(wallet)}:${options.useIndexedData !== false}:${includeTrustSnapshot}`,
+    async () => {
+      const totalStart = nowMs();
+      const [internalProfile, networkProfile, registries] = await Promise.all([
+        getInternalRiskProfileRaw(wallet),
+        getArcNetworkRiskProfile(wallet, options),
+        readArcRegistries(wallet)
+      ]);
 
-  const combined = combineProfiles(internalProfile, networkProfile);
-  return {
-    ...combined,
-    arcReputation: internalProfile.arcReputation,
-    arcValidations: internalProfile.arcValidations
-  };
+      const trustStart = nowMs();
+      const combined = combineProfiles(
+        {
+          ...internalProfile,
+          ...registries
+        },
+        {
+          ...networkProfile,
+          ...registries
+        }
+      );
+      const snapshotStart = nowMs();
+      const enrichedCombined = {
+        ...combined,
+        ...registries
+      };
+      const result = includeTrustSnapshot
+        ? await attachTrustSnapshot(enrichedCombined)
+        : enrichedCombined;
+      logTiming("combined_profile", {
+        total: nowMs() - totalStart,
+        trustEngine: snapshotStart - trustStart,
+        snapshot: nowMs() - snapshotStart
+      });
+      return result;
+    }
+  );
 }
 
 export function getRiskProfiles(limit = 50): RiskProfile[] {
@@ -276,6 +411,7 @@ export function toRiskSummaryResponse(profile: RiskProfile) {
     participant: {
       type: profile.participant.type,
       userType: profile.participant.userType ?? "unknown",
+      kxDeclaredUserType: profile.participant.kxDeclaredUserType ?? "unknown",
       entityType: profile.participant.entityType ?? "unknown",
       name: profile.participant.name ?? null,
       operatorAddress: profile.participant.operatorAddress ?? null,
@@ -284,6 +420,7 @@ export function toRiskSummaryResponse(profile: RiskProfile) {
     },
     summary: {
       financialBehaviorScore: profile.scores.financialBehaviorScore,
+      trustScore: profile.scores.trustScore ?? profile.scores.financialBehaviorScore,
       riskScore: profile.scores.riskScore,
       riskTier: profile.scores.riskTier,
       confidenceLevel: profile.scores.confidenceLevel,
@@ -294,6 +431,7 @@ export function toRiskSummaryResponse(profile: RiskProfile) {
       evidenceCount: profile.activity.evidenceCount
     },
     identityEstimation: profile.identityEstimation,
+    trustSnapshot: profile.trustSnapshot,
     arcReputation: profile.arcReputation,
     arcValidations: profile.arcValidations,
     limitations: riskServiceLimitations
@@ -313,6 +451,7 @@ export function toRiskSignalsResponse(profile: RiskProfile) {
     message: profile.message,
     recommendation: profile.recommendation,
     identityEstimation: profile.identityEstimation,
+    trustSnapshot: profile.trustSnapshot,
     arcReputation: profile.arcReputation,
     arcValidations: profile.arcValidations,
     behavioralSignals: profile.behavioralSignals,
@@ -521,6 +660,7 @@ export function evaluateRiskGuard(wallet: string, policy: RiskGuardPolicy = {}) 
       participant: {
         type: profile.participant.type,
         userType: profile.participant.userType ?? "unknown",
+        kxDeclaredUserType: profile.participant.kxDeclaredUserType ?? "unknown",
         entityType: profile.participant.entityType ?? "unknown",
         name: profile.participant.name ?? null,
         operatorAddress: profile.participant.operatorAddress ?? null,
@@ -612,6 +752,7 @@ export async function evaluateRiskGuardAsync(wallet: string, policy: RiskGuardPo
       participant: {
         type: profile.participant.type,
         userType: profile.participant.userType ?? "unknown",
+        kxDeclaredUserType: profile.participant.kxDeclaredUserType ?? "unknown",
         entityType: profile.participant.entityType ?? "unknown",
         name: profile.participant.name ?? null,
         operatorAddress: profile.participant.operatorAddress ?? null,

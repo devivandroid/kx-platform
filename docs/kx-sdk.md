@@ -44,6 +44,11 @@ const client = new KXClient({
 | Query combined risk profile | `GET /api/risk/profile/:wallet?source=combined` | `getCombinedProfile()` |
 | Query compact risk summary | `GET /api/risk/summary/:wallet` | `getRiskSummary()` |
 | Query behavioral/risk signals | `GET /api/risk/signals/:wallet` | `getRiskSignals()` |
+| List Trust Snapshot history | `GET /api/risk/snapshots/:wallet` | `listTrustSnapshots()` |
+| Publish eligible or test Trust Attestation | `POST /api/risk/snapshots/:wallet` | `publishTrustSnapshot()` |
+| Read Trust Attestation by id | `GET /api/risk/attestations/:id` | `getAttestation()` |
+| Read latest wallet Trust Attestation | `GET /api/risk/attestations/wallet/:wallet/latest` | `getLatestAttestation()` |
+| Read wallet Trust Attestations | `GET /api/risk/attestations/wallet/:wallet` | `getWalletAttestations()` |
 | Evaluate a participant with Risk Guard | `POST /api/risk/guard` | `evaluateTransactionRisk()` |
 | List demo participants | `GET /api/risk/participants` | `listRiskParticipants()` |
 | Discover API capabilities | `GET /api/agent-capabilities` | `getAgentCapabilities()` |
@@ -139,6 +144,41 @@ if (guard.decision === "allow") {
 }
 ```
 
+### Trust Attestations
+
+Trust Snapshots are created automatically when wallets are analyzed. Eligible snapshots can be
+published manually to the experimental Arc Testnet `KXTrustAttestationRegistry` when the backend
+is configured with `KX_ATTESTATION_REGISTRY_ADDRESS` and
+`KX_ATTESTATION_PUBLISHER_PRIVATE_KEY`.
+
+```ts
+const snapshots = await client.listTrustSnapshots(sellerWallet);
+const eligible = snapshots.latest?.attestationStatus === "eligible";
+
+if (eligible && snapshots.latest) {
+  const published = await client.publishTrustSnapshot(sellerWallet, {
+    snapshotId: snapshots.latest.id
+  });
+  console.log(published.txHash);
+}
+```
+
+KX signs the attestation from the configured publisher wallet. The user does not sign this
+publication transaction. The on-chain attestation stores only minimal data and a report hash, not
+the full risk report.
+
+For Arc Testnet validation only, the UI and SDK expose a temporary test mode:
+
+```ts
+await client.publishTrustSnapshot(sellerWallet, {
+  snapshotId: snapshots.latest?.id,
+  mode: "test"
+});
+```
+
+This publishes a clearly labeled `Test Attestation - Arc Testnet` and bypasses production
+eligibility rules. Disable this mode before production.
+
 ## Limitations
 
 - The SDK is repository-local and not published to npm yet.
@@ -147,4 +187,6 @@ if (guard.decision === "allow") {
 - It does not replace wallet security, transaction review or compliance checks.
 - Risk Intelligence is based on KX activity only.
 - Arc Network profiles use limited Arc Testnet RPC reads only; they are not full indexed wallet histories.
+- Trust Attestation publishing is experimental testnet infrastructure and should be protected
+  before production use.
 - This is Arc Testnet demo software and must not be used with real funds.

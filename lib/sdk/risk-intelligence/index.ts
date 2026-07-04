@@ -1,4 +1,9 @@
 export { RiskIntelligenceClient, RiskIntelligenceClientError } from "@/lib/sdk/risk-intelligence/client";
+export {
+  recoverTrustSnapshotSigner,
+  verifyReportHash,
+  verifyTrustSnapshot
+} from "@/lib/sdk/risk-intelligence/verifyTrustSnapshot";
 export type {
   ActivityLevel,
   BehavioralSignalStatus,
@@ -10,6 +15,7 @@ export type {
   RiskGuardPolicy,
   RiskGuardResponse,
   RiskModelResponse,
+  RiskSdkOnChainTrustAttestation,
   RiskParticipantType,
   RiskParticipantsResponse,
   RiskProfileStatus,
@@ -19,9 +25,21 @@ export type {
   RiskSdkParticipant,
   RiskSdkRiskSignal,
   RiskSdkScores,
+  RiskSdkTrustAttestationStatus,
+  RiskSdkTrustSnapshot,
   RiskSignalsResponse,
   RiskSignalSeverity,
   RiskSummaryResponse,
+  RiskTrustAttestationResponse,
+  RiskTrustSnapshotPublishResponse,
+  RiskTrustSnapshotsResponse,
+  RiskWalletTrustAttestationsResponse,
   RiskTier,
+  TrustSnapshotPublishOptions,
+  TrustPolicyDecision,
+  TrustPolicyEvaluationOptions,
+  TrustPolicyEvaluationResponse,
+  TrustPolicyId,
+  TrustPolicyRiskTier,
   UnknownWalletBehavior
 } from "@/lib/sdk/risk-intelligence/types";

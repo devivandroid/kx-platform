@@ -6,7 +6,12 @@ import {
   type RiskParticipantsResponse,
   type RiskProfileResponse,
   type RiskSignalsResponse,
-  type RiskSummaryResponse
+  type RiskSummaryResponse,
+  type RiskTrustAttestationResponse,
+  type RiskTrustSnapshotPublishResponse,
+  type RiskTrustSnapshotsResponse,
+  type RiskWalletTrustAttestationsResponse,
+  type TrustSnapshotPublishOptions
 } from "@/lib/sdk/risk-intelligence";
 import type {
   AgentCapabilitiesResponse,
@@ -219,6 +224,29 @@ export class KXClient {
 
   getRiskSignals(wallet: string): Promise<RiskSignalsResponse> {
     return this.risk.getSignals(wallet);
+  }
+
+  listTrustSnapshots(wallet: string, limit?: number): Promise<RiskTrustSnapshotsResponse> {
+    return this.risk.listTrustSnapshots(wallet, limit);
+  }
+
+  publishTrustSnapshot(
+    wallet: string,
+    options?: TrustSnapshotPublishOptions
+  ): Promise<RiskTrustSnapshotPublishResponse> {
+    return this.risk.publishTrustSnapshot(wallet, options);
+  }
+
+  getAttestation(attestationId: string | number): Promise<RiskTrustAttestationResponse> {
+    return this.risk.getAttestation(attestationId);
+  }
+
+  getLatestAttestation(wallet: string): Promise<RiskTrustAttestationResponse> {
+    return this.risk.getLatestAttestation(wallet);
+  }
+
+  getWalletAttestations(wallet: string): Promise<RiskWalletTrustAttestationsResponse> {
+    return this.risk.getWalletAttestations(wallet);
   }
 
   getRiskModel(): Promise<RiskModelResponse> {

@@ -5,7 +5,8 @@ import { BrandLogo } from "@/components/BrandLogo";
 const footerLinks = [
   { label: "Marketplace", href: "/marketplace", external: false },
   { label: "Jobs", href: "/requests", external: false },
-  { label: "Risk Intelligence", href: "/reputation", external: false },
+  { label: "Trust Engine", href: "/reputation", external: false },
+  { label: "Trust Services", href: "/trust-services", external: false },
   { label: "Agent API", href: "/agent-api", external: false },
   {
     label: "GitHub",

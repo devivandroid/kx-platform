@@ -1,7 +1,6 @@
 import { randomUUID } from "crypto";
 import {
   getEntityTypeFromLegacy,
-  getUserTypeFromLegacy,
   isParticipantType
 } from "@/lib/participants";
 import { isPostgresEnabled, pgQuery, upsertParticipant } from "@/lib/server/postgres";
@@ -410,7 +409,7 @@ async function upsertRiskEvent(event: ReputationEvent): Promise<void> {
     userType:
       typeof event.metadata?.userType === "string"
         ? event.metadata.userType
-        : getUserTypeFromLegacy(getEventParticipantType(event)),
+        : null,
     entityType:
       typeof event.metadata?.entityType === "string"
         ? event.metadata.entityType
@@ -448,7 +447,7 @@ async function ensureDbRiskEventsSeeded() {
         userType:
           typeof event.metadata?.userType === "string"
             ? event.metadata.userType
-            : getUserTypeFromLegacy(getEventParticipantType(event)),
+            : null,
         entityType:
           typeof event.metadata?.entityType === "string"
             ? event.metadata.entityType
@@ -528,7 +527,7 @@ export async function getEventsAsync(): Promise<ReputationEvent[]> {
   const rows = await pgQuery<{ data: ReputationEvent }>(
     "SELECT data FROM risk_events ORDER BY occurred_at DESC"
   );
-  return rows.map((row) => row.data);
+  return rows.length > 0 ? rows.map((row) => row.data) : getEvents();
 }
 
 export async function getEventsByWalletAsync(wallet: string): Promise<ReputationEvent[]> {

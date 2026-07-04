@@ -1,6 +1,6 @@
-# Risk Intelligence SDK
+# KX Trust Engine SDK
 
-The KX Risk Intelligence Service exposes participant-aware risk profiles for
+The KX Trust Engine SDK exposes participant-aware risk profiles for
 wallets observed in KX activity. The internal TypeScript SDK wraps the public
 `/api/risk/*` routes so builders and agent workflows can integrate them without hand-writing
 fetch calls.
@@ -18,11 +18,17 @@ This SDK is kept inside the repository for now. It is not published to npm.
 - Seed/demo participant profiles.
 - No-data profile handling for unknown wallets.
 - Risk Guard pre-transaction decisions.
+- Trust Policy Engine decisions over signed Trust Snapshot evidence.
 
 ## Use From This Repository
 
 ```ts
-import { RiskIntelligenceClient } from "@/lib/sdk/risk-intelligence";
+import {
+  RiskIntelligenceClient,
+  recoverTrustSnapshotSigner,
+  verifyReportHash,
+  verifyTrustSnapshot
+} from "@/lib/sdk/risk-intelligence";
 
 const client = new RiskIntelligenceClient({
   baseUrl: "https://kx-platform.fly.dev"
@@ -49,6 +55,10 @@ const refreshedNetwork = await client.getNetworkProfile(wallet, {
 const summary = await client.getSummary(wallet);
 const signals = await client.getSignals(wallet);
 const participants = await client.listParticipants({ limit: 10 });
+const snapshots = await client.listTrustSnapshots(wallet);
+const verified = verifyTrustSnapshot(snapshots.latest);
+const hashMatches = verifyReportHash(snapshots.latest);
+const signer = snapshots.latest ? recoverTrustSnapshotSigner(snapshots.latest) : null;
 const model = await client.getModel();
 const guard = await client.evaluateTransactionRisk(wallet, {
   maxRiskScore: 40,
@@ -56,6 +66,7 @@ const guard = await client.evaluateTransactionRisk(wallet, {
   minimumConfidenceLevel: "Medium",
   unknownWalletBehavior: "review"
 });
+const policyDecision = await client.evaluateTrustPolicy(wallet, "enterprise-strict");
 ```
 
 Available methods:
@@ -65,9 +76,12 @@ Available methods:
 - `getCombinedProfile(wallet, options)` calls `GET /api/risk/profile/:wallet?source=combined`.
 - `getSummary(wallet)` calls `GET /api/risk/summary/:wallet`.
 - `getSignals(wallet)` calls `GET /api/risk/signals/:wallet`.
+- `listTrustSnapshots(wallet, limit?)` calls `GET /api/risk/snapshots/:wallet`.
+- `publishTrustSnapshot(wallet, options?)` calls `POST /api/risk/snapshots/:wallet`.
 - `getModel()` calls `GET /api/risk/model`.
 - `listParticipants(params)` calls `GET /api/risk/participants`.
 - `evaluateTransactionRisk(wallet, policy)` calls `POST /api/risk/guard`.
+- `evaluateTrustPolicy(wallet, policyId, options?)` calls `POST /api/trust/policy/evaluate`.
 - `canTransactWith(wallet, policy)` returns `true` when Risk Guard returns `allow`.
 - `isRiskAtOrBelow(wallet, maxRiskScore)` returns `true` when `riskScore <= maxRiskScore`.
 - `isRiskBelow(wallet, riskScore)` returns `true` when the wallet risk score is below the provided threshold.
@@ -81,11 +95,12 @@ Arc Network reads use indexed data by default when a snapshot is less than 1 min
 
 Risk profile responses may include `identityEstimation`, a Human / Agent behavioral estimation
 based only on Arc Network activity. It uses the latest 50 wallet transactions needed for
-estimation, keeps declared `userType` separate from `estimatedUserType`, includes
-`identityMatch`, and returns explainable timing, gas-fee and counterparty signals. Transaction
-samples are replaced on each fresh reindex and are not accumulated as long-term behavioral
-history. This is estimation, not identity verification, KYC, AML, compliance screening or bot
-detection certainty.
+estimation, keeps `kxDeclaredUserType`, `arcDeclaredIdentity` and `estimatedUserType` separate,
+includes `identityMatch` only when a comparable declared identity exists, and returns explainable
+timing, gas-fee and counterparty signals. Transaction samples are replaced on each fresh reindex
+and are not accumulated as long-term behavioral history. This is estimation, not identity
+verification, KYC, AML, compliance screening or bot detection certainty.
+Mixed or conflicting evidence returns `Mixed / Inconclusive`; missing evidence returns `Unknown`.
 
 `listParticipants` supports:
 
@@ -125,6 +140,35 @@ Developers who need the full `allow | review | block` distinction should call
 `evaluateTransactionRisk`. `canTransactWith` returns `true` only for `allow`; `review` and
 `block` both return `false`.
 
+### Trust Policy Engine
+
+The KX Trust Policy Engine is a decision layer over Arc + KX Trust Engine evidence. It answers
+whether a wallet should be `ALLOW`, `REVIEW` or `BLOCK` under a selected policy.
+
+Endpoint:
+
+```txt
+POST /api/trust/policy/evaluate
+```
+
+Built-in policies:
+
+- `basic-safe`
+- `human-preferred`
+- `agent-safe`
+- `enterprise-strict`
+
+```ts
+const decision = await client.evaluateTrustPolicy(wallet, "human-preferred", {
+  amountUSDC: "250",
+  context: "marketplace_purchase"
+});
+```
+
+The response includes `decision`, `reasons`, `passedRules`, `failedRules`, `trustSnapshot`,
+`reportHash` and `signatureStatus`. This is a configurable policy decision, not identity
+verification, KYC, AML or compliance approval.
+
 ### Unknown Wallets And No-Data Profiles
 
 Risk Intelligence is currently based on KX activity. A wallet with no observed
@@ -160,6 +204,70 @@ settings are missing, the fields return a clear `not_configured`, `abi_unavailab
 KX ratings remain separate as KX Commercial Rating. Arc Reputation and Arc Validations are
 registry-sourced evidence and should not be interpreted as KYC, AML or compliance screening
 unless the registry data explicitly provides that meaning.
+
+### Trust Snapshots
+
+KX stores an off-chain Trust Snapshot whenever a wallet is analyzed. In developer surfaces this is
+the Trust Attestation foundation: the snapshot contains the wallet, risk score, risk tier,
+Human / Agent Estimation result, confidence, evidence source, signal summary, engine version,
+timestamps, `reportHash`, and future on-chain attestation fields.
+
+```ts
+const history = await client.listTrustSnapshots(wallet);
+const latest = history.latest;
+```
+
+Snapshots are persisted in PostgreSQL when `DATABASE_URL` is configured. They are not published
+on-chain yet, and they are not identity verification, KYC, AML or compliance screening.
+
+### Experimental Trust Attestation Publishing
+
+Eligible Trust Snapshots can be published manually to Arc Testnet through the
+`KXTrustAttestationRegistry` foundation contract. This is an experimental testnet flow.
+
+```ts
+const snapshots = await client.listTrustSnapshots(wallet);
+
+if (snapshots.latest?.attestationStatus === "eligible") {
+  const publication = await client.publishTrustSnapshot(wallet, {
+    snapshotId: snapshots.latest.id
+  });
+  console.log(publication.explorerUrl);
+}
+```
+
+Publishing is signed by the configured KX publisher wallet on the backend, not by the analyzed
+wallet or website visitor. Required server variables:
+
+```env
+KX_ATTESTATION_REGISTRY_ADDRESS=
+KX_ATTESTATION_PUBLISHER_PRIVATE_KEY=
+```
+
+PostgreSQL stores the complete signed Trust Snapshot history. The registry stores only minimal
+fields: wallet, report hash, risk tier, Human / Agent probability, confidence, engine version,
+optional evidence URI and timestamp. It does not store the full report and does not provide
+identity verification, KYC, AML or compliance screening.
+
+Read decoded on-chain attestations:
+
+```ts
+const byId = await client.getAttestation("0");
+const latest = await client.getLatestAttestation(wallet);
+const walletHistory = await client.getWalletAttestations(wallet);
+```
+
+Temporary Arc Testnet validation mode:
+
+```ts
+await client.publishTrustSnapshot(wallet, {
+  snapshotId: snapshots.latest?.id,
+  mode: "test"
+});
+```
+
+`mode: "test"` bypasses production eligibility rules and labels the registry payload as
+`Test Attestation - Arc Testnet`. This is for testnet only and must be disabled before production.
 
 ```ts
 const decision = await client.evaluateTransactionRisk(wallet, {

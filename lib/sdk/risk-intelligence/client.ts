@@ -8,7 +8,15 @@ import type {
   RiskParticipantsResponse,
   RiskProfileResponse,
   RiskSignalsResponse,
-  RiskSummaryResponse
+  RiskSummaryResponse,
+  RiskTrustAttestationResponse,
+  RiskTrustSnapshotPublishResponse,
+  RiskTrustSnapshotsResponse,
+  RiskWalletTrustAttestationsResponse,
+  TrustSnapshotPublishOptions,
+  TrustPolicyEvaluationOptions,
+  TrustPolicyEvaluationResponse,
+  TrustPolicyId
 } from "@/lib/sdk/risk-intelligence/types";
 
 export class RiskIntelligenceClientError extends Error {
@@ -106,6 +114,31 @@ export class RiskIntelligenceClient {
     return this.get(`/api/risk/signals/${encodeURIComponent(wallet)}`);
   }
 
+  listTrustSnapshots(wallet: string, limit = 25): Promise<RiskTrustSnapshotsResponse> {
+    return this.get(
+      appendQuery(`/api/risk/snapshots/${encodeURIComponent(wallet)}`, { limit })
+    );
+  }
+
+  publishTrustSnapshot(
+    wallet: string,
+    options: TrustSnapshotPublishOptions = {}
+  ): Promise<RiskTrustSnapshotPublishResponse> {
+    return this.post(`/api/risk/snapshots/${encodeURIComponent(wallet)}`, options);
+  }
+
+  getAttestation(attestationId: string | number): Promise<RiskTrustAttestationResponse> {
+    return this.get(`/api/risk/attestations/${encodeURIComponent(String(attestationId))}`);
+  }
+
+  getLatestAttestation(wallet: string): Promise<RiskTrustAttestationResponse> {
+    return this.get(`/api/risk/attestations/wallet/${encodeURIComponent(wallet)}/latest`);
+  }
+
+  getWalletAttestations(wallet: string): Promise<RiskWalletTrustAttestationsResponse> {
+    return this.get(`/api/risk/attestations/wallet/${encodeURIComponent(wallet)}`);
+  }
+
   getModel(): Promise<RiskModelResponse> {
     return this.get("/api/risk/model");
   }
@@ -127,6 +160,18 @@ export class RiskIntelligenceClient {
     policy: RiskGuardPolicy
   ): Promise<RiskGuardResponse> {
     return this.post("/api/risk/guard", { wallet, policy });
+  }
+
+  evaluateTrustPolicy(
+    wallet: string,
+    policyId: TrustPolicyId,
+    options: TrustPolicyEvaluationOptions = {}
+  ): Promise<TrustPolicyEvaluationResponse> {
+    return this.post("/api/trust/policy/evaluate", {
+      wallet,
+      policyId,
+      ...options
+    });
   }
 
   async isRiskAtOrBelow(wallet: string, maxRiskScore: number): Promise<boolean> {

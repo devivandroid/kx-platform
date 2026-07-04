@@ -16,6 +16,11 @@ function readUseIndexedData(request: Request): boolean {
   return value !== "false";
 }
 
+function readIncludeTrustSnapshot(request: Request): boolean {
+  const value = new URL(request.url).searchParams.get("includeTrustSnapshot");
+  return value !== "false";
+}
+
 export async function GET(request: Request, context: RiskWalletContext) {
   const { wallet } = await context.params;
 
@@ -29,7 +34,8 @@ export async function GET(request: Request, context: RiskWalletContext) {
   return NextResponse.json(
     toPublicRiskProfileResponse(
       await getArcNetworkRiskProfileAsync(wallet, {
-        useIndexedData: readUseIndexedData(request)
+        useIndexedData: readUseIndexedData(request),
+        includeTrustSnapshot: readIncludeTrustSnapshot(request)
       })
     )
   );

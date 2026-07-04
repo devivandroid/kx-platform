@@ -4,7 +4,6 @@ import { normalizeArcIdentityId } from "@/lib/arcNative";
 import {
   getEntityTypeFromLegacy,
   getLegacyParticipantType,
-  getUserTypeFromLegacy,
   isEntityType,
   isParticipantType,
   isUserType
@@ -55,10 +54,12 @@ export async function POST(request: NextRequest, context: SubmitRouteContext) {
     : undefined;
   const providerUserType = isUserType(body.providerUserType)
     ? body.providerUserType
-    : getUserTypeFromLegacy(providerParticipantType);
+    : undefined;
   const providerEntityType = isEntityType(body.providerEntityType)
     ? body.providerEntityType
-    : getEntityTypeFromLegacy(providerParticipantType);
+    : providerParticipantType
+      ? getEntityTypeFromLegacy(providerParticipantType)
+      : undefined;
   const providerParticipantName =
     typeof body.providerParticipantName === "string" && body.providerParticipantName.trim()
       ? body.providerParticipantName.trim()
@@ -74,7 +75,7 @@ export async function POST(request: NextRequest, context: SubmitRouteContext) {
     providerAddress: body.providerAddress,
     providerUserType,
     providerEntityType,
-    providerParticipantType: providerParticipantType ?? getLegacyParticipantType(providerUserType),
+    providerParticipantType: providerParticipantType ?? (providerUserType ? getLegacyParticipantType(providerUserType) : undefined),
     providerParticipantName,
     providerOperatorAddress,
     providerArcIdentityId,
@@ -94,8 +95,10 @@ export async function POST(request: NextRequest, context: SubmitRouteContext) {
     requestId: id,
     metadata: {
       deliveryHash: result.delivery.deliveryHash,
-      userType: providerUserType,
-      entityType: providerEntityType,
+      userType: providerUserType ?? null,
+      userTypeSource: providerUserType ? "explicit" : null,
+      userTypeExplicit: Boolean(providerUserType),
+      entityType: providerEntityType ?? null,
       participantType: result.request.providerParticipantType ?? null,
       participantName: providerParticipantName ?? null,
       operatorAddress: providerOperatorAddress ?? null,

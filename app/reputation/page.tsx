@@ -5,27 +5,21 @@ import { maskWallet } from "@/lib/server/reputation/reputationResponse";
 import { ReputationLookup } from "@/app/reputation/ReputationLookup";
 import { getAppBaseUrl } from "@/lib/getAppBaseUrl";
 import { getEntityTypeLabel, getUserTypeLabel } from "@/lib/participants";
+import { ParticipantRiskProfiles } from "@/app/reputation/ParticipantRiskProfiles";
 import {
   calculateRiskProfile,
   getUniqueRiskWallets
 } from "@/lib/server/risk-intelligence/calculateRiskProfile";
-import type { RiskProfile, RiskTier } from "@/lib/server/risk-intelligence/types";
+import type { RiskProfile } from "@/lib/server/risk-intelligence/types";
 
-function getRiskAccent(tier: RiskTier): string {
-  if (tier === "Low") return "border-emerald-300/40 bg-emerald-300/10 text-emerald-100";
-  if (tier === "Medium") return "border-amber-300/40 bg-amber-300/10 text-amber-100";
-  if (tier === "High") return "border-red-300/40 bg-red-300/10 text-red-100";
-  return "border-slate-400/30 bg-slate-400/10 text-slate-300";
-}
-
-function formatDate(value: string | null): string {
-  return value ? new Date(value).toLocaleString() : "Unknown";
-}
+export const dynamic = "force-dynamic";
 
 function getParticipantDisplay(profile: RiskProfile): string {
-  const type = `${getUserTypeLabel(
-    profile.participant.userType === "unknown" ? undefined : profile.participant.userType
-  )} / ${getEntityTypeLabel(
+  const userType =
+    profile.participant.kxDeclaredUserType && profile.participant.kxDeclaredUserType !== "unknown"
+      ? getUserTypeLabel(profile.participant.kxDeclaredUserType)
+      : "Not declared";
+  const type = `${userType} / ${getEntityTypeLabel(
     profile.participant.entityType === "unknown" ? undefined : profile.participant.entityType
   )}`;
   return profile.participant.name ? `${profile.participant.name} - ${type}` : type;
@@ -40,141 +34,79 @@ export default async function ReputationPage() {
       (a, b) =>
         (b.scores.financialBehaviorScore ?? -1) - (a.scores.financialBehaviorScore ?? -1)
     );
-  const totalVolume = profiles.reduce(
-    (sum, profile) => sum + Number(profile.activity.totalCompletedVolumeUSDC),
-    0
-  );
-  const verifiedPayments = events.filter((event) => event.eventType === "PAYMENT_VERIFIED").length;
-  const completedEscrows = events.filter((event) => event.eventType === "FUNDS_RELEASED").length;
+  const participantProfileRows = profiles.map((profile) => ({
+    wallet: profile.wallet,
+    displayName: getParticipantDisplay(profile),
+    maskedWallet: maskWallet(profile.wallet),
+    financialBehaviorScore: profile.scores.financialBehaviorScore,
+    trustScore: profile.scores.trustScore ?? profile.scores.financialBehaviorScore,
+    riskScore: profile.scores.riskScore,
+    riskTier: profile.scores.riskTier,
+    confidenceLevel: profile.scores.confidenceLevel,
+    completedVolumeUSDC: profile.activity.totalCompletedVolumeUSDC
+  }));
 
   return (
     <PageShell>
       <PageHeader
-        eyebrow="Risk Intelligence"
-        title="Risk Intelligence"
-        description="Risk and reputation signals for humans, agents and organizations participating in KX activity on Arc."
+        eyebrow="Risk Intelligence module"
+        title="KX Trust Engine"
+        description="Understand trust before transacting."
       />
 
-      <div className="grid gap-4 md:grid-cols-4">
-        {[
-          ["Wallets tracked", profiles.length],
-          ["Total volume", `${totalVolume.toFixed(2)} USDC`],
-          ["Verified payments", verifiedPayments],
-          ["Completed settlements", completedEscrows]
-        ].map(([label, value]) => (
-          <div key={label} className="rounded-lg border border-arc-border bg-arc-panel/80 p-4">
-            <p className="text-sm text-slate-500">{label}</p>
-            <p className="mt-2 text-2xl font-semibold text-white">{value}</p>
-          </div>
-        ))}
-      </div>
-
-      {profiles[0] ? (
-        <section className="mt-6 rounded-lg border border-arc-border bg-arc-panel/80 p-5">
-          <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
-            <div>
-              <h2 className="text-xl font-semibold text-white">Risk Intelligence snapshot</h2>
-              <p className="mt-2 text-sm leading-6 text-slate-400">
-                Preview participant monitoring for marketplace activity, transaction behavior and
-                confidence signals.
-              </p>
-            </div>
-            <span
-              className={`inline-flex rounded-full border px-3 py-1 text-xs font-semibold ${getRiskAccent(
-                profiles[0].scores.riskTier
-              )}`}
-            >
-              {profiles[0].scores.riskTier} risk example
-            </span>
-          </div>
-
-          <div className="mt-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-            {[
-              ["Financial Behavior Score", profiles[0].scores.financialBehaviorScore],
-              ["Risk Score", profiles[0].scores.riskScore],
-              ["Confidence Level", profiles[0].scores.confidenceLevel],
-              ["Activity Level", profiles[0].activity.activityLevel],
-              ["Completed Volume", `${profiles[0].activity.totalCompletedVolumeUSDC} USDC`],
-              ["Completed Actions", profiles[0].activity.completedActions],
-              ["Last Activity", formatDate(profiles[0].activity.lastActivity ?? null)],
-              ["Evidence Count", profiles[0].activity.evidenceCount]
-            ].map(([label, value]) => (
-              <div key={label} className="rounded-lg border border-arc-border bg-black/20 p-4">
-                <p className="text-xs font-medium uppercase tracking-normal text-slate-500">
-                  {label}
-                </p>
-                <p className="mt-2 text-lg font-semibold text-white">{value}</p>
-              </div>
-            ))}
-          </div>
-        </section>
-      ) : null}
-
-      <section className="mt-6 rounded-lg border border-arc-border bg-arc-panel/80 p-5">
-        <h2 className="text-xl font-semibold text-white">Participant risk profiles</h2>
-        <p className="mt-2 text-sm leading-6 text-slate-400">
-          Participant-aware risk profiles based on KX activity and optional Arc
-          Testnet RPC signals. This is not an official Arc or Circle score and does not score all
-          Arc wallets.
-        </p>
-        <div className="mt-4 overflow-hidden rounded-lg border border-arc-border">
-          {profiles.map((profile) => (
-            <div
-              key={profile.wallet}
-              className="grid gap-3 border-b border-arc-border bg-black/20 p-4 text-sm last:border-b-0 md:grid-cols-[1.4fr_1fr_0.7fr_0.8fr_0.8fr_0.8fr]"
-            >
-              <span>
-                <span className="block font-semibold text-white">
-                  {getParticipantDisplay(profile)}
-                </span>
-                <span className="text-xs text-slate-500">{maskWallet(profile.wallet)}</span>
-              </span>
-              <span>Behavior {profile.scores.financialBehaviorScore}</span>
-              <span>Risk {profile.scores.riskScore}</span>
-              <span>
-                <span
-                  className={`inline-flex rounded-full border px-2.5 py-1 text-xs font-semibold ${getRiskAccent(
-                    profile.scores.riskTier
-                  )}`}
-                >
-                  {profile.scores.riskTier}
-                </span>
-              </span>
-              <span>{profile.scores.confidenceLevel} confidence</span>
-              <span>{profile.activity.totalCompletedVolumeUSDC} USDC</span>
-            </div>
-          ))}
-        </div>
-      </section>
-
-      <div className="mt-6">
+      <div>
         <ReputationLookup />
       </div>
 
+      <ParticipantRiskProfiles profiles={participantProfileRows} />
+
       <section className="mt-6 grid gap-5 lg:grid-cols-2">
-        <div className="rounded-lg border border-arc-border bg-arc-panel/80 p-5">
-          <h2 className="text-xl font-semibold text-white">Methodology</h2>
-          <p className="mt-3 text-sm leading-6 text-slate-400">
-            The financial behavior score starts at 500 and moves up for successful payments,
+        <details className="rounded-lg border border-arc-border bg-arc-panel/80 p-5">
+          <summary className="cursor-pointer list-none">
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <h2 className="text-xl font-semibold text-white">Methodology</h2>
+                <p className="mt-2 text-sm leading-6 text-slate-400">
+                  Scoring model, confidence levels and model limitations.
+                </p>
+              </div>
+              <span className="rounded-full border border-slate-500/40 px-3 py-1 text-xs text-slate-300">
+                Show details
+              </span>
+            </div>
+          </summary>
+          <p className="mt-4 text-sm leading-6 text-slate-400">
+            The Trust Score reflects positive evidence such as successful payments,
             verified payments, downloads, funded settlements, submitted deliverables, released funds,
-            consistent activity, counterparty diversity and completed volume. The preview model
-            reduces score for request cancellations and purchase starts without completion.
+            consistent activity, counterparty diversity and completed volume.
           </p>
           <p className="mt-3 text-sm leading-6 text-slate-400">
-            Risk score ranges from 0 to 100, where 0 is lowest observed risk in this preview model.
+            Risk Score ranges from 0 to 100, where lower is safer in this preview model.
             Low is 0-24, Medium is 25-59, High is 60-100, and Unknown means insufficient evidence.
-            Confidence is Low below 5 events, Medium from 5 to 20 events, and High above 20 events.
+            Analysis Confidence describes evidence quality, not publication eligibility.
           </p>
           <p className="mt-3 text-sm leading-6 text-slate-400">
             Reputation remains part of the underlying signal model, but the product surface is Risk
             Intelligence for builders that need wallet profiles, confidence levels and explainable
             behavior signals.
           </p>
-        </div>
+        </details>
 
-        <div className="rounded-lg border border-arc-border bg-arc-panel/80 p-5">
-          <h2 className="text-xl font-semibold text-white">Risk Intelligence API Documentation</h2>
-          <p className="mt-2 text-sm leading-6 text-slate-400">
+        <details className="rounded-lg border border-arc-border bg-arc-panel/80 p-5">
+          <summary className="cursor-pointer list-none">
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <h2 className="text-xl font-semibold text-white">API / SDK Documentation</h2>
+                <p className="mt-2 text-sm leading-6 text-slate-400">
+                  Public Risk Intelligence endpoints and SDK examples for builders.
+                </p>
+              </div>
+              <span className="rounded-full border border-slate-500/40 px-3 py-1 text-xs text-slate-300">
+                Show details
+              </span>
+            </div>
+          </summary>
+          <p className="mt-4 text-sm leading-6 text-slate-400">
             Builders, human operators and AI agents can query Internal, Arc Network or Combined
             Risk Intelligence profiles, inspect marketplace activity, participant context,
             behavioral signals and model methodology.
@@ -236,7 +168,7 @@ const summary = await client.getSummary(wallet);`}
             current Arc Network adapter does not include a full indexer, so wallet age, unique
             counterparties and detailed historical contract interactions remain roadmap items.
           </p>
-        </div>
+        </details>
       </section>
     </PageShell>
   );

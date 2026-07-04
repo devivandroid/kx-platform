@@ -1,18 +1,18 @@
-# KX Platform
+# KX Trust Engine
 
 ![KX logo](public/brand/logo-wordmark.svg)
 
 **Built on Arc Testnet**
 
-KX, formerly Knowledge Exchange, is now positioned as **KX Platform**.
+KX, formerly Knowledge Exchange, is now positioned as **KX Trust Engine**.
 
-**Marketplace & Trust Layer for the Arc Agent Economy**
+**Arc-native trust infrastructure for human and agent commerce.**
 
-**The programmable trust & commerce layer for humans, autonomous agents and organizations.**
+**Understand trust before transacting.**
 
-KX Platform is an Arc-compatible commerce platform that enables participants to securely exchange services, knowledge and work using USDC.
+KX Trust Engine helps builders, operators and autonomous agents evaluate trust before transacting, assigning Jobs, publishing resources or integrating programmable commerce workflows on Arc.
 
-Discover resources, create Jobs, protect settlement, evaluate participant risk, integrate programmable commerce APIs and build trusted workflows with the KX SDK.
+Arc provides Identity, Jobs, Reputation, Validation and Settlement. KX provides Risk Intelligence, Human / Agent Estimation, Signed Trust Snapshots, Trust Policy decisions, experimental Trust Attestations and SDK/API integrations.
 
 KX is an independent project built on Arc Testnet and uses USDC for programmable payments. This project is not affiliated with, endorsed by, or officially supported by Circle or Arc.
 
@@ -20,7 +20,7 @@ KX is an independent project built on Arc Testnet and uses USDC for programmable
 
 ## Architecture
 
-KX is organized as a layered commerce platform with reusable KX Trust Services over Arc-compatible Jobs.
+KX is organized as Arc-native trust infrastructure with reusable KX Trust Services over Arc-compatible Jobs.
 
 - [System Context Diagram](docs/architecture/system-context.md)
 - [Component Diagram](docs/architecture/component-diagram.md)
@@ -40,7 +40,9 @@ flowchart TB
   subgraph trust["KX Trust Services"]
     riskSvc["Risk Intelligence"]
     identitySvc["Human / Agent Estimation"]
-    futureSvc["Reputation\nFraud Signals\nCompliance adapters"]
+    snapshots["Signed Trust Snapshots"]
+    policies["Trust Policy Engine"]
+    attestations["Trust Attestations"]
   end
 
   subgraph risk["Risk Intelligence Engine"]
@@ -48,12 +50,12 @@ flowchart TB
     features["Feature Layer"]
     scoring["Risk Scoring"]
     signals["Behavioral Signals"]
-    guard["Risk Guard"]
+    guard["Policy Decision Layer"]
   end
 
   publicApis["Public Risk Intelligence APIs"]
   sdk["KX TypeScript SDK"]
-  sdkMethods["getProfile()\ngetSummary()\ngetSignals()\nevaluateTransactionRisk()\ncanTransactWith()\nisRiskAtOrBelow()\nisRiskBelow()\nisRiskAbove()\nhasRiskData()"]
+  sdkMethods["getProfile()\nlistTrustSnapshots()\nevaluateTrustPolicy()\npublishTrustSnapshot()\nverifyTrustSnapshot()\nrecoverTrustSnapshotSigner()"]
 
   postgres["PostgreSQL"]
   ipfs["IPFS"]
@@ -71,6 +73,9 @@ flowchart TB
   features --> signals
   scoring --> guard
   signals --> guard
+  risk --> snapshots
+  snapshots --> policies
+  policies --> attestations
   trust --> risk
 
   risk --> publicApis
@@ -111,7 +116,29 @@ If the official registry addresses are not configured or no record exists, KX pr
 
 ## KX Trust Services
 
-KX Trust Services are reusable services over Arc-compatible Jobs. Current services include Risk Intelligence, Human / Agent Estimation, KX Commercial Rating, and optional consumption of Arc Reputation and Arc Validations when official registry configuration is provided. KX keeps Arc Reputation separate from KX Commercial Rating and does not claim KYC, AML or compliance coverage unless registry data explicitly provides that meaning.
+KX Trust Services are reusable services over Arc-compatible Jobs. Current services include Risk Intelligence, Human / Agent Estimation, Signed Trust Snapshots, Trust Policy Engine, Trust Attestations, KX Commercial Rating, and optional consumption of Arc Reputation and Arc Validations when official registry configuration is provided. KX keeps Arc Reputation separate from KX Commercial Rating and does not claim KYC, AML or compliance coverage unless registry data explicitly provides that meaning.
+
+Primary Trust Engine APIs:
+
+```txt
+GET  /api/risk/profile/:wallet
+GET  /api/risk/snapshots/:wallet
+POST /api/trust/policy/evaluate
+POST /api/risk/snapshots/:wallet
+GET  /api/agent-capabilities
+```
+
+Developer catalog:
+
+| Service | API | SDK | Intended use |
+| --- | --- | --- | --- |
+| Trust Score API | `GET /api/risk/profile/:wallet` | `client.getProfile(wallet)` | Show positive trust evidence before transacting. |
+| Risk Intelligence API | `GET /api/risk/profile/:wallet?source=combined` | `client.getCombinedProfile(wallet)` | Evaluate risk score, tier, confidence and explainable signals. |
+| Human / Agent Estimation | `GET /api/risk/network/:wallet` | `client.getNetworkProfile(wallet)` | Estimate whether Arc Network behavior looks human, agent-like, mixed or unknown. |
+| Trust Policy Engine | `POST /api/trust/policy/evaluate` | `client.evaluateTrustPolicy(wallet, policyId)` | Return ALLOW, REVIEW or BLOCK with reasons. |
+| Signed Trust Snapshots | `GET /api/risk/snapshots/:wallet` | `client.listTrustSnapshots(wallet)` | Verify KX-signed off-chain trust reports. |
+| Trust Attestations | `POST /api/risk/snapshots/:wallet` | `client.publishTrustSnapshot(wallet, { mode: "test" })` | Manually publish a TEST attestation on Arc Testnet. |
+| TypeScript SDK | `GET /api/agent-capabilities` | `RiskIntelligenceClient` | Integrate Trust Engine APIs into apps and agents. |
 
 ## Live Demo
 
@@ -637,12 +664,108 @@ Risk profiles may also include `identityEstimation`, an optional Human / Agent b
 estimation based only on Arc Network activity. It indexes the latest 50 wallet transactions needed
 for estimation, stores only required transaction fields, and replaces the prior sample on each
 fresh reindex instead of accumulating historical samples. It returns `Likely Human`,
-`Likely Agent` or `Unknown`, probability, confidence, Arc Network evidence source, declared user
-type when provided, identity match status, and explainable signals such as transaction frequency,
+`Likely Agent`, `Mixed / Inconclusive` or `Unknown`, probability, confidence, Arc Network evidence source, KX declared
+identity when explicitly provided, Arc declared identity when available, identity match status, and
+explainable signals such as transaction frequency,
 timing variance, activity consistency, gas fee regularity, counterparty diversity and network
 coverage. This is estimation, not identity verification, KYC, AML, compliance screening or bot
 detection certainty. The estimation and transaction sample are cached in PostgreSQL by wallet when
 `DATABASE_URL` is configured.
+
+## KX Trust Engine
+
+KX stores an off-chain **Trust Snapshot** whenever a wallet is analyzed by Risk Intelligence.
+Developer APIs expose the same object as a **Trust Attestation** foundation. A snapshot includes the
+wallet, risk score, risk tier, Human / Agent Estimation result, confidence, evidence source, signal
+summary, engine version, creation and expiry timestamps, Arc Identity reference when available, and
+a deterministic `reportHash`.
+
+PostgreSQL stores the complete signed Trust Snapshot history. Each snapshot has a canonical
+payload, `schemaVersion`, `engineVersion`, `reportHash`, KX signature, signer address, signing
+algorithm and signing timestamp. The signed snapshot is the primary trust artifact.
+
+The smart contract stores only minimal Trust Attestations: wallet, report hash, risk tier, Human /
+Agent probability, confidence, engine version, optional evidence URI and timestamp. Eligible
+snapshots can be manually published to the experimental Arc Testnet
+`KXTrustAttestationRegistry` contract. Eligibility is conservative: KX requires high confidence,
+enough evidence and enough prior history, and it avoids creating duplicate eligible snapshots in a
+short window. Trust Snapshots and Trust Attestations are not identity verification, KYC, AML or
+compliance screening.
+
+Architecture flow:
+
+```txt
+Arc
+  -> KX Trust Engine
+  -> Signed Trust Snapshot
+  -> Trust Policy Engine
+  -> Trust Attestation
+  -> Arc Testnet
+```
+
+Arc remains the source for Identity, Jobs, Reputation and Validation. KX provides the Trust Engine,
+signed Trust Snapshots, policy-driven attestations and developer APIs.
+
+RC1 release behavior:
+
+- Signed Trust Snapshot generation is automatic when a wallet is analyzed.
+- Trust Attestation publication is manual TEST mode only.
+- Automatic Trust Attestation publishing is intentionally disabled.
+- Skipped snapshots include an explicit publication eligibility reason.
+
+```txt
+GET /api/risk/snapshots/:wallet
+POST /api/risk/snapshots/:wallet
+GET /api/risk/attestations/:id
+GET /api/risk/attestations/wallet/:wallet
+GET /api/risk/attestations/wallet/:wallet/latest
+```
+
+The Risk Intelligence SDK exposes this through:
+
+```ts
+const snapshots = await client.listTrustSnapshots(wallet);
+const verified = verifyTrustSnapshot(snapshots.latest);
+const hashMatches = verifyReportHash(snapshots.latest);
+
+if (snapshots.latest?.attestationStatus === "eligible") {
+  const published = await client.publishTrustSnapshot(wallet, {
+    snapshotId: snapshots.latest.id
+  });
+  console.log(published.explorerUrl);
+}
+```
+
+Temporary testnet mode:
+
+```ts
+await client.publishTrustSnapshot(wallet, {
+  snapshotId: snapshots.latest?.id,
+  mode: "test"
+});
+```
+
+`mode: "test"` bypasses production eligibility checks and publishes a clearly labeled
+`Test Attestation - Arc Testnet`. This is only for Arc Testnet validation and must be disabled
+before production.
+
+KX signs Trust Attestation publication from the configured backend publisher wallet. The analyzed
+wallet or website visitor does not sign this publication transaction. The on-chain registry stores
+only minimal fields: wallet, report hash, risk tier, Human / Agent probability, confidence, engine
+version, optional evidence URI and timestamp. It does not store the full report.
+
+Deploy the experimental registry to Arc Testnet with:
+
+```bash
+npm run contracts:deploy:trust-registry:arc
+```
+
+Required server variables:
+
+```env
+KX_ATTESTATION_REGISTRY_ADDRESS=
+KX_ATTESTATION_PUBLISHER_PRIVATE_KEY=
+```
 
 ## KX SDK
 
@@ -728,6 +851,33 @@ POST /api/risk/guard
 
 Risk Guard is based only on KX activity. It is not AML, KYC, sanctions, fraud or
 compliance screening.
+
+## KX Trust Policy Engine
+
+The KX Trust Policy Engine is a simple decision layer over Arc + KX Trust Engine evidence. It
+answers whether a wallet should be `ALLOW`, `REVIEW` or `BLOCK` under a selected trust policy.
+
+Built-in policies:
+
+- `basic-safe`
+- `human-preferred`
+- `agent-safe`
+- `enterprise-strict`
+
+```txt
+POST /api/trust/policy/evaluate
+```
+
+```ts
+const decision = await client.evaluateTrustPolicy(wallet, "enterprise-strict", {
+  amountUSDC: "250",
+  context: "marketplace_purchase"
+});
+```
+
+The response includes reasons, passed rules, failed rules, the latest Trust Snapshot, `reportHash`
+and `signatureStatus`. Policy decisions are explainable KX trust decisions; they are not identity
+verification, KYC, AML or compliance approval.
 
 ### Unknown wallets and no-data profiles
 
@@ -818,6 +968,7 @@ Tables created automatically on first server access:
 - `arc_network_snapshots`: cached Arc Network activity snapshots for Risk Intelligence.
 - `wallet_identity_estimations`: cached Human / Agent behavioral estimations by wallet.
 - `wallet_transaction_samples`: latest 50 transaction samples used for identity estimation; replaced on fresh reindex.
+- `trust_snapshots`: historical off-chain Trust Snapshots used as the foundation for future Trust Attestations.
 
 The same schema is versioned under `supabase/migrations/`.
 

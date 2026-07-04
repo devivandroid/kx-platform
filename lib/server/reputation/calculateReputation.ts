@@ -1,6 +1,5 @@
 import {
   getEntityTypeFromLegacy,
-  getUserTypeFromLegacy,
   isEntityType,
   isParticipantType,
   isUserType
@@ -79,8 +78,8 @@ function buildEmptySummary(
   wallet: string,
   participant: Pick<
     ReputationSummary,
-    "userType" | "entityType" | "participantType" | "participantName" | "operatorAddress"
-    | "arcIdentityId" | "identitySource"
+    "userType" | "kxDeclaredUserType" | "entityType" | "participantType" | "participantName"
+    | "operatorAddress" | "arcIdentityId" | "identitySource"
   >
 ): ReputationSummary {
   return {
@@ -129,19 +128,27 @@ function buildEmptySummary(
   };
 }
 
+function isExplicitKxUserType(metadata?: ReputationEvent["metadata"]): boolean {
+  return metadata?.userTypeExplicit === true || metadata?.userTypeSource === "explicit";
+}
+
 export function calculateReputation(wallet: string, events: ReputationEvent[]): ReputationSummary {
   const walletEvents = events.filter(
     (event) => event.walletAddress.toLowerCase() === wallet.toLowerCase()
   );
   const participantMetadata = walletEvents.find((event) =>
-    isUserType(event.metadata?.userType) || isParticipantType(event.metadata?.participantType)
+    isUserType(event.metadata?.userType) ||
+    isParticipantType(event.metadata?.participantType) ||
+    typeof event.metadata?.arcIdentityId === "string"
   )?.metadata;
   const participantType = isParticipantType(participantMetadata?.participantType)
     ? participantMetadata.participantType
     : undefined;
-  const userType = isUserType(participantMetadata?.userType)
-    ? participantMetadata.userType
-    : getUserTypeFromLegacy(participantType);
+  const kxDeclaredUserType =
+    isUserType(participantMetadata?.userType) && isExplicitKxUserType(participantMetadata)
+      ? participantMetadata.userType
+      : undefined;
+  const userType = kxDeclaredUserType;
   const entityType = isEntityType(participantMetadata?.entityType)
     ? participantMetadata.entityType
     : getEntityTypeFromLegacy(participantType);
@@ -214,6 +221,7 @@ export function calculateReputation(wallet: string, events: ReputationEvent[]): 
   if (evidenceCount === 0) {
     return buildEmptySummary(wallet, {
       userType,
+      kxDeclaredUserType,
       entityType,
       participantType,
       participantName,
@@ -240,21 +248,6 @@ export function calculateReputation(wallet: string, events: ReputationEvent[]): 
   const escrowCompletionRate = escrowsFunded > 0 ? fundsReleased / escrowsFunded : 0;
   const downloadAfterPurchaseRate =
     completedPurchases > 0 ? Math.min(resourcesDownloaded / completedPurchases, 1) : 0;
-  const financialRiskScore = Math.max(
-    0,
-    Math.min(
-      100,
-      Math.round(
-        100 -
-          score / 10 +
-          purchaseStartAbandonmentRate * 18 +
-          (1 - Math.min(escrowCompletionRate, 1)) * (escrowsFunded > 0 ? 10 : 0) +
-          (evidenceCount < 5 ? 12 : 0) +
-          (volumeConcentrationRate > 0.75 ? 8 : 0)
-      )
-    )
-  );
-  const riskTier = getRiskTier(financialRiskScore, evidenceCount);
   const paymentAttempts = successfulPayments + failedPayments;
   const paymentSuccessRate = paymentAttempts > 0 ? successfulPayments / paymentAttempts : 0;
   const lastActivity = walletEvents
@@ -275,6 +268,24 @@ export function calculateReputation(wallet: string, events: ReputationEvent[]): 
   const averageActionsPerDay = evidenceCount / observedDays;
   const averageTransactionAmount =
     completedVolumeEvents.length > 0 ? totalCompletedVolume / completedVolumeEvents.length : 0;
+  const behavioralRisk =
+    purchaseStartAbandonmentRate * 24 +
+    (paymentAttempts > 0 ? (1 - paymentSuccessRate) * 22 : 0) +
+    (escrowsFunded > 0 ? (1 - Math.min(escrowCompletionRate, 1)) * 14 : 0) +
+    (downloadAfterPurchaseRate === 0 && completedPurchases > 0 ? 8 : 0) +
+    (volumeConcentrationRate > 0.85 ? 18 : volumeConcentrationRate > 0.65 ? 8 : 0) +
+    (daysSinceLastActivity !== null && daysSinceLastActivity > 30 ? 10 : 0) +
+    (averageActionsPerDay > 5 ? 8 : 0) +
+    (evidenceCount < 5 ? 14 : 0);
+  const positiveEvidenceDiscount =
+    Math.min(uniqueCounterparties * 2, 8) +
+    Math.min(completedActions * 0.6, 8) +
+    Math.min(totalCompletedVolume * 0.08, 6);
+  const financialRiskScore = Math.max(
+    5,
+    Math.min(100, Math.round(behavioralRisk - positiveEvidenceDiscount + 10))
+  );
+  const riskTier = getRiskTier(financialRiskScore, evidenceCount);
   const activityLevel = getActivityLevel({
     evidenceCount,
     averageActionsPerDay,
@@ -430,6 +441,7 @@ export function calculateReputation(wallet: string, events: ReputationEvent[]): 
   return {
     wallet,
     userType,
+    kxDeclaredUserType,
     entityType,
     participantType,
     participantName,

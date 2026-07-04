@@ -71,6 +71,15 @@ export async function GET() {
     risk_signals_endpoint: "/api/risk/signals/{wallet}",
     risk_guard: true,
     risk_guard_endpoint: "/api/risk/guard",
+    trust_policy_engine: true,
+    trust_policy_endpoint: "/api/trust/policy/evaluate",
+    trust_policy_decisions: ["ALLOW", "REVIEW", "BLOCK"],
+    built_in_trust_policies: [
+      "basic-safe",
+      "human-preferred",
+      "agent-safe",
+      "enterprise-strict"
+    ],
     pre_transaction_risk_checks: true,
     client_defined_risk_policy: true,
     no_data_profiles: true,
@@ -87,6 +96,15 @@ export async function GET() {
       combinedProfileEndpoint: "/api/risk/profile/{wallet}?source=combined",
       summaryEndpoint: "/api/risk/summary/{wallet}",
       signalsEndpoint: "/api/risk/signals/{wallet}",
+      trustSnapshotsEndpoint: "/api/risk/snapshots/{wallet}",
+      trustAttestationPublishEndpoint: "/api/risk/snapshots/{wallet}",
+      trustAttestationEndpoint: "/api/risk/attestations/{id}",
+      walletTrustAttestationsEndpoint: "/api/risk/attestations/wallet/{wallet}",
+      latestWalletTrustAttestationEndpoint: "/api/risk/attestations/wallet/{wallet}/latest",
+      trustPolicyEndpoint: "/api/trust/policy/evaluate",
+      trustAttestationPublishing: "experimental_manual_testnet",
+      trustAttestationTestMode: true,
+      trustAttestationRegistryConfigured: Boolean(process.env.KX_ATTESTATION_REGISTRY_ADDRESS),
       guardEndpoint: "/api/risk/guard",
       modelEndpoint: "/api/risk/model",
       participantsEndpoint: "/api/risk/participants",
@@ -196,6 +214,43 @@ export async function GET() {
         method: "GET",
         endpoint: "/api/risk/signals/{wallet}",
         note: "Returns behavioral and risk signals for a participant wallet.",
+        responseCodes: [200, 400]
+      },
+      {
+        id: "list_trust_snapshots",
+        method: "GET",
+        endpoint: "/api/risk/snapshots/{wallet}",
+        note: "Returns historical off-chain Trust Snapshots and the latest snapshot for a wallet.",
+        responseCodes: [200, 400]
+      },
+      {
+        id: "publish_trust_attestation",
+        method: "POST",
+        endpoint: "/api/risk/snapshots/{wallet}",
+        note: "Experimental Arc Testnet flow. Publishes an eligible Trust Snapshot from the configured KX publisher wallet. Use mode=test only for testnet validation.",
+        requiredFields: ["snapshotId"],
+        optionalFields: ["mode=test"],
+        responseCodes: [200, 400, 404, 409, 503]
+      },
+      {
+        id: "get_trust_attestation",
+        method: "GET",
+        endpoint: "/api/risk/attestations/{id}",
+        note: "Reads a decoded minimal Trust Attestation from the Arc Testnet registry.",
+        responseCodes: [200, 400]
+      },
+      {
+        id: "get_wallet_trust_attestations",
+        method: "GET",
+        endpoint: "/api/risk/attestations/wallet/{wallet}",
+        note: "Reads all decoded minimal Trust Attestations for a wallet from the Arc Testnet registry.",
+        responseCodes: [200, 400]
+      },
+      {
+        id: "get_latest_wallet_trust_attestation",
+        method: "GET",
+        endpoint: "/api/risk/attestations/wallet/{wallet}/latest",
+        note: "Reads the latest decoded minimal Trust Attestation for a wallet from the Arc Testnet registry.",
         responseCodes: [200, 400]
       },
       {

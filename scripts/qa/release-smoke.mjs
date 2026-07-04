@@ -95,11 +95,20 @@ await test("GET /api/agent-capabilities exposes Arc metadata", async () => {
     body.capabilities?.some((capability) => capability.id === "query_arc_network_risk"),
     "missing Arc Network risk capability"
   );
+  assert(
+    body.capabilities?.some((capability) => capability.id === "publish_trust_attestation"),
+    "missing Trust Attestation publish capability"
+  );
   assert(body.participant_risk_profiles === true, "missing participant risk profiles flag");
   assert(body.behavioral_signals === true, "missing behavioral signals flag");
   assert(body.confidence_levels === true, "missing confidence levels flag");
   assert(body.risk_guard === true, "missing risk_guard flag");
   assert(body.risk_guard_endpoint === "/api/risk/guard", "missing risk guard endpoint");
+  assert(body.trust_policy_engine === true, "missing trust policy engine flag");
+  assert(
+    body.trust_policy_endpoint === "/api/trust/policy/evaluate",
+    "missing trust policy endpoint"
+  );
   assert(body.pre_transaction_risk_checks === true, "missing pre-transaction checks flag");
   assert(body.client_defined_risk_policy === true, "missing client-defined policy flag");
   assert(body.no_data_profiles === true, "missing no-data profiles flag");
@@ -199,6 +208,16 @@ await test("GET /api/risk/signals/[wallet] returns signals", async () => {
   assert(response.status === 200, `expected 200, got ${response.status}`);
   assert(Array.isArray(body.behavioralSignals), "missing behavioral signals");
   assert(Array.isArray(body.riskSignals), "missing risk signals");
+});
+
+await test("GET /api/risk/snapshots/[wallet] returns Trust Snapshot history", async () => {
+  const { response, body } = await request(
+    "/api/risk/snapshots/0x8e0a1111111111111111111111111111111125be"
+  );
+  assert(response.status === 200, `expected 200, got ${response.status}`);
+  assert(body.service === "KX Trust Engine", "wrong trust service");
+  assert(Array.isArray(body.snapshots), "snapshots must be an array");
+  assert("latest" in body, "missing latest snapshot field");
 });
 
 await test("GET /api/risk/model returns public methodology", async () => {
@@ -320,6 +339,38 @@ await test("POST /api/risk/guard strict maxRiskScore returns block or review", a
   assert(response.status === 200, `expected 200, got ${response.status}`);
   assert(["block", "review"].includes(body.decision), "expected block or review");
   assert(body.allowed === false, "strict policy should not allow");
+});
+
+await test("POST /api/trust/policy/evaluate returns policy decision", async () => {
+  const { response, body } = await request("/api/trust/policy/evaluate", {
+    method: "POST",
+    body: JSON.stringify({
+      wallet: "0x8e0a1111111111111111111111111111111125be",
+      policyId: "basic-safe"
+    })
+  });
+  assert(response.status === 200, `expected 200, got ${response.status}`);
+  assert(["ALLOW", "REVIEW", "BLOCK"].includes(body.decision), "missing policy decision");
+  assert(body.policyId === "basic-safe", "wrong policy id");
+  assert(Array.isArray(body.reasons), "missing reasons");
+  assert(Array.isArray(body.passedRules), "missing passed rules");
+  assert(Array.isArray(body.failedRules), "missing failed rules");
+  assert("reportHash" in body, "missing report hash");
+  assert("signatureStatus" in body, "missing signature status");
+});
+
+await test("POST /api/trust/policy/evaluate Basic Safe can allow low-risk wallet", async () => {
+  const { response, body } = await request("/api/trust/policy/evaluate", {
+    method: "POST",
+    body: JSON.stringify({
+      wallet: "0x5555555555555555555555555555555555555555",
+      policyId: "basic-safe"
+    })
+  });
+  assert(response.status === 200, `expected 200, got ${response.status}`);
+  assert(body.profile?.policyRiskTier, "missing policy risk tier");
+  assert(body.profile?.rawRiskTier, "missing raw risk tier");
+  assert(body.decision === "ALLOW", `expected ALLOW for seeded low-risk wallet, got ${body.decision}`);
 });
 
 await test("GET /api/resources/search returns resources", async () => {

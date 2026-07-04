@@ -57,6 +57,7 @@ export function toRiskProfile(summary: ReputationSummary): RiskProfile {
     participant: {
       type: participantType,
       userType: summary.userType ?? "unknown",
+      kxDeclaredUserType: summary.kxDeclaredUserType ?? "unknown",
       entityType: summary.entityType ?? "unknown",
       name: summary.participantName || undefined,
       operatorAddress: summary.operatorAddress || undefined,
@@ -65,6 +66,7 @@ export function toRiskProfile(summary: ReputationSummary): RiskProfile {
     },
     scores: {
       financialBehaviorScore: isNoData ? null : summary.reputationScore,
+      trustScore: isNoData ? null : Math.round(summary.reputationScore / 10),
       riskScore: isNoData ? null : summary.financialRiskScore,
       riskTier: isNoData ? "Unknown" : summary.riskTier,
       confidenceLevel: isNoData ? "Low" : summary.confidenceLevel

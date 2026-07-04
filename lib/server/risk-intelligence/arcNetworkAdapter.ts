@@ -91,6 +91,7 @@ export async function getArcNetworkRiskProfile(
     const snapshot = await indexArcNetworkSnapshot(wallet, options);
     const identityEstimation = await estimateWalletIdentityFromArcNetwork(snapshot.wallet, {
       ...options,
+      snapshot,
       useIndexedData: true,
       declaredUserType: "unknown"
     });
@@ -114,10 +115,10 @@ export async function getArcNetworkRiskProfile(
           (Number(nativeBalance) > 0 ? 40 : 0) +
           (snapshot.lastTransferAt ? 30 : 0)
       );
-      const lowVolumeMinimumRisk = Number(snapshot.usdcVolumeTotal) < 1 ? 35 : 0;
+      const lowVolumeMinimumRisk = Number(snapshot.usdcVolumeTotal) > 0 && Number(snapshot.usdcVolumeTotal) < 1 ? 20 : 0;
       const riskScore = Math.max(
         lowVolumeMinimumRisk,
-        Math.max(0, Math.min(100, Math.round((1000 - behaviorScore) / 10)))
+        Math.max(5, Math.min(100, Math.round((1000 - behaviorScore) / 10)))
       );
       const adjustedBehaviorScore = Math.max(0, Math.min(1000, 1000 - riskScore * 10));
       const coverage = {
@@ -139,6 +140,7 @@ export async function getArcNetworkRiskProfile(
         participant: { type: "unknown" },
         scores: {
           financialBehaviorScore: adjustedBehaviorScore,
+          trustScore: Math.round(adjustedBehaviorScore / 10),
           riskScore,
           riskTier: getRiskTier(riskScore),
           confidenceLevel: getEvidenceQualityConfidence({
@@ -425,7 +427,7 @@ export async function getArcNetworkRiskProfile(
     1000,
     500 + Math.min(transactionCount * 8, 260) + (hasBalance ? 40 : 0) + (isContract ? 20 : 0)
   );
-  const riskScore = Math.max(0, Math.min(100, Math.round((1000 - behaviorScore) / 10)));
+  const riskScore = Math.max(5, Math.min(100, Math.round((1000 - behaviorScore) / 10)));
 
   return {
     wallet,
@@ -437,6 +439,7 @@ export async function getArcNetworkRiskProfile(
     participant: { type: "unknown" },
     scores: {
       financialBehaviorScore: behaviorScore,
+      trustScore: Math.round(behaviorScore / 10),
       riskScore,
       riskTier: getRiskTier(riskScore),
       confidenceLevel: getConfidenceLevel(evidenceCount)

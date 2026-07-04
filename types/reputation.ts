@@ -38,6 +38,7 @@ export type ReputationEvent = {
 export type ReputationSummary = {
   wallet: string;
   userType?: UserType;
+  kxDeclaredUserType?: UserType;
   entityType?: EntityType;
   participantType?: ParticipantType;
   participantName?: string;
