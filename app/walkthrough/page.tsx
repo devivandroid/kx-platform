@@ -7,16 +7,16 @@ const walkthroughFlows = [
   {
     title: "Instant Access purchase",
     description:
-      "A buyer unlocks a ready-to-use resource with a direct USDC payment to the seller.",
+      "A buyer buys a ready-to-use product with a direct USDC payment to the creator.",
     steps: [
-      "A creator publishes a priced resource with license, category, tags, and seller address.",
+      "A creator publishes a priced product with license, category, tags, and creator address.",
       "The buyer opens Marketplace and reviews featured datasets, benchmark packages, and other Instant Access assets.",
-      "The resource detail page shows price, seller, license, preview text, and file metadata when available.",
-      "The buyer connects MetaMask, switches to Arc Testnet, and confirms Unlock Resource.",
-      "The USDC transfer confirms on Arc and the resource unlocks for that wallet.",
+      "The product detail page shows price, creator, license, product preview, and file metadata when available.",
+      "The buyer connects MetaMask, switches to Arc Testnet, and confirms Buy with USDC.",
+      "The USDC transfer confirms on Arc and the product unlocks for that wallet.",
       "The buyer can view the receipt, Arc explorer transaction link, inline content, and unlocked download buttons."
     ],
-    outcome: "The resource content or authenticated file downloads are available to the purchasing wallet."
+    outcome: "The product content or authenticated file downloads are available to the purchasing wallet."
   },
   {
     title: "HTTP 402 Agent API",
@@ -24,11 +24,11 @@ const walkthroughFlows = [
       "An autonomous client receives payment instructions, pays in USDC, and retries with proof.",
     steps: [
       "The agent calls /api/agent-capabilities to discover supported workflows.",
-      "The agent requests a protected resource.",
+      "The agent requests a protected product.",
       "The API responds with HTTP 402 Payment Required and payment instructions.",
-      "The agent pays the seller with USDC on Arc Testnet.",
+      "The agent pays the creator with USDC on Arc Testnet.",
       "The agent submits txHash and buyerAddress for verification.",
-      "The agent retries the resource request with proof and receives a structured payload or file download URLs."
+      "The agent retries the product request with proof and receives a structured payload or file download URLs."
     ],
     outcome: "The API returns JSON, Markdown, or authenticated file metadata after stateless transaction verification."
   },
@@ -37,7 +37,7 @@ const walkthroughFlows = [
     description:
       "Apps and agents query preview risk signals based on KX activity.",
     steps: [
-      "A wallet buys resources, verifies payments, downloads files, or participates in requests.",
+      "A wallet buys products, verifies payments, downloads files, or participates in jobs.",
       "KX records lightweight marketplace events.",
       "The preview model calculates reputation signals, financial behavior score, risk tier, confidence, and evidence count.",
       "Builders query /api/risk/profile/{wallet}, /api/risk/summary/{wallet}, /api/risk/signals/{wallet}, or /api/risk/model.",

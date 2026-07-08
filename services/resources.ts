@@ -1,4 +1,5 @@
 ﻿import type { InstantResource } from "@/types/resource";
+import { isBlockedPlaceholderWallet } from "@/lib/placeholderWallets";
 
 export const instantResources: InstantResource[] = [
   {
@@ -444,11 +445,15 @@ export const instantResources: InstantResource[] = [
 ];
 
 export function getInstantResources(): InstantResource[] {
-  return instantResources;
+  return instantResources.filter(
+    (resource) =>
+      !isBlockedPlaceholderWallet(resource.sellerAddress) &&
+      !isBlockedPlaceholderWallet(resource.operatorAddress)
+  );
 }
 
 export function getInstantResourceById(id: string): InstantResource | undefined {
-  return instantResources.find((resource) => resource.id === id);
+  return getInstantResources().find((resource) => resource.id === id);
 }
 
 

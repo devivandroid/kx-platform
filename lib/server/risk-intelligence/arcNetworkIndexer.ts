@@ -22,7 +22,7 @@ const nativeRpcDecimals = 18;
 const transferTopic = id("Transfer(address,address,uint256)");
 const defaultBlockWindow = Number(process.env.ARC_NETWORK_INDEXER_BLOCK_WINDOW ?? 250_000);
 const defaultChunkSize = Number(process.env.ARC_NETWORK_INDEXER_CHUNK_SIZE ?? 9_000);
-const cacheTtlSeconds = Number(process.env.ARC_NETWORK_INDEXER_CACHE_SECONDS ?? 60);
+const cacheTtlSeconds = Number(process.env.ARC_NETWORK_INDEXER_CACHE_SECONDS ?? 86_400);
 
 export type ArcNetworkSnapshot = {
   wallet: string;

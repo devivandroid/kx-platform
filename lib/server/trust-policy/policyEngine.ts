@@ -128,8 +128,15 @@ function isLowOrLowMedium(profile: RiskProfile, policyRiskTier: TrustPolicyRiskT
 }
 
 function getCriticalRiskSignals(profile: RiskProfile): string[] {
+  const criticalLabels = new Set([
+    "Completed work not released",
+    "Assigned job missed deadline",
+    "Signed snapshot invalid",
+    "Identity mismatch"
+  ]);
+
   return (profile.riskSignals ?? [])
-    .filter((signal) => signal.severity === "Elevated")
+    .filter((signal) => signal.severity === "Elevated" && criticalLabels.has(signal.label))
     .map((signal) => `${signal.label}: ${signal.description}`);
 }
 

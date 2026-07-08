@@ -8,6 +8,7 @@ import { PageHeader } from "@/components/PageHeader";
 import { PageShell } from "@/components/PageShell";
 import { RatingSummaryText, StarDisplay, StarInput } from "@/components/StarRating";
 import { TransactionStatus, type TransactionState } from "@/components/TransactionStatus";
+import { TrustCheckButton } from "@/components/TrustCheckButton";
 import { useUsdc } from "@/hooks/useUsdc";
 import { useWallet } from "@/hooks/useWallet";
 import { getIdentitySourceLabel } from "@/lib/arcNative";
@@ -103,7 +104,7 @@ function getAgentPreviewPayload(resource: InstantResource): string {
       license: resource.license,
       resourceType: resource.resourceType,
       deliveryType: resource.deliveryType,
-      payload: "Structured JSON/Markdown resource payload"
+      payload: "Structured JSON/Markdown product payload"
     },
     null,
     2
@@ -201,10 +202,10 @@ export function ResourceDetailClient({ initialResource, resourceId }: ResourceDe
       <PageShell>
         <div className="rounded-lg border border-arc-border bg-arc-panel/80 p-8 text-center">
           <p className="text-sm font-semibold uppercase tracking-normal text-arc-blue">
-            Resource not found
+            Product not found
           </p>
           <p className="mt-3 text-sm leading-6 text-slate-400">
-            This resource is not in the public catalog.
+            This product is not in the public catalog.
           </p>
           <Link
             href="/marketplace"
@@ -227,7 +228,7 @@ export function ResourceDetailClient({ initialResource, resourceId }: ResourceDe
 
   const handleBuy = async () => {
     if (!address) {
-      setTxState({ phase: "error", message: "Connect MetaMask before buying this resource." });
+      setTxState({ phase: "error", message: "Connect MetaMask before buying this product." });
       return;
     }
 
@@ -237,14 +238,14 @@ export function ResourceDetailClient({ initialResource, resourceId }: ResourceDe
     }
 
     if (!isAddress(resource.sellerAddress)) {
-      setTxState({ phase: "error", message: "Invalid seller address for this resource." });
+      setTxState({ phase: "error", message: "Invalid creator address for this product." });
       return;
     }
 
     if (hasInsufficientBalance) {
       setTxState({
         phase: "error",
-        message: `Insufficient USDC balance. You need ${missingBalanceUsdc} more USDC to unlock this resource.`
+        message: `Insufficient USDC balance. You need ${missingBalanceUsdc} more USDC to buy this product.`
       });
       return;
     }
@@ -287,7 +288,7 @@ export function ResourceDetailClient({ initialResource, resourceId }: ResourceDe
       setTxState({
         phase: "success",
         hash: tx.hash,
-        message: "Payment confirmed. Resource unlocked locally for this wallet."
+        message: "Payment confirmed. Product unlocked locally for this wallet."
       });
     } catch (error) {
       setTxState({ phase: "error", message: normalizeWeb3Error(error) });
@@ -340,7 +341,7 @@ export function ResourceDetailClient({ initialResource, resourceId }: ResourceDe
   return (
     <PageShell>
       <PageHeader
-        eyebrow="Instant resource"
+        eyebrow="Instant product"
         title={resource.title}
         description={resource.description}
       />
@@ -391,7 +392,7 @@ export function ResourceDetailClient({ initialResource, resourceId }: ResourceDe
 
           <dl className="mt-6 grid gap-4 text-sm md:grid-cols-2">
             <div>
-              <dt className="text-slate-500">Resource type</dt>
+              <dt className="text-slate-500">Product type</dt>
               <dd className="mt-1 text-white">{resource.resourceType}</dd>
             </div>
             <div>
@@ -403,7 +404,7 @@ export function ResourceDetailClient({ initialResource, resourceId }: ResourceDe
               <dd className="mt-1 text-white">{resource.license}</dd>
             </div>
             <div>
-              <dt className="text-slate-500">Seller</dt>
+              <dt className="text-slate-500">Creator</dt>
               <dd className="mt-1">
                 <span className="block text-white">{sellerDisplayName}</span>
                 <a
@@ -452,7 +453,7 @@ export function ResourceDetailClient({ initialResource, resourceId }: ResourceDe
           </dl>
 
           <div className="mt-6">
-            <p className="text-sm text-slate-500">Preview</p>
+            <p className="text-sm text-slate-500">Product Preview</p>
             <p className="mt-2 rounded-lg bg-black/30 p-3 text-sm leading-6 text-slate-300">
               {resource.previewText}
             </p>
@@ -461,7 +462,7 @@ export function ResourceDetailClient({ initialResource, resourceId }: ResourceDe
           <div className="mt-6 rounded-lg border border-arc-border bg-black/20 p-5">
             <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
               <div>
-                <p className="text-sm font-semibold text-white">Resource rating</p>
+                <p className="text-sm font-semibold text-white">Product rating</p>
                 <p className="mt-1 text-xs leading-5 text-slate-500">
                   Ratings are based on KX activity.
                 </p>
@@ -474,7 +475,7 @@ export function ResourceDetailClient({ initialResource, resourceId }: ResourceDe
 
             {purchase ? (
               <div className="mt-5 rounded-lg border border-arc-border bg-white/[0.03] p-4">
-                <p className="text-sm font-semibold text-white">Rate this resource</p>
+                <p className="text-sm font-semibold text-white">Rate this product</p>
                 <div className="mt-3 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                   <StarInput value={userRating?.rating ?? 0} onChange={handleRatingChange} />
                   <p className="text-xs text-slate-500">
@@ -489,7 +490,7 @@ export function ResourceDetailClient({ initialResource, resourceId }: ResourceDe
               </div>
             ) : (
               <p className="mt-4 rounded-lg border border-arc-border bg-white/[0.03] p-3 text-sm leading-6 text-slate-400">
-                Purchased users can rate this resource after unlocking it.
+                Buyers can rate this product after buying it.
               </p>
             )}
           </div>
@@ -503,7 +504,7 @@ export function ResourceDetailClient({ initialResource, resourceId }: ResourceDe
                   </p>
                   <p className="mt-1 text-xs leading-5 text-slate-500">
                     {resource.files.length} curated file{resource.files.length === 1 ? "" : "s"}{" "}
-                    included with this resource.
+                    included with this product.
                   </p>
                 </div>
                 {unlocked ? (
@@ -617,7 +618,7 @@ ${getAgentPreviewPayload(resource)}`}
               </>
             ) : (
               <p className="mt-3 rounded-lg border border-amber-300/30 bg-amber-300/10 p-3 text-sm leading-6 text-amber-100">
-                This resource is served by the public catalog API when backend persistence is
+                This product is served by the public catalog API when backend persistence is
                 configured.
               </p>
             )}
@@ -677,18 +678,23 @@ ${getAgentPreviewPayload(resource)}`}
                   ? "Checking balance..."
                   : hasInsufficientBalance
                     ? "Insufficient USDC"
-                    : "Unlock Resource"}
+                    : "Buy with USDC"}
             </button>
           )}
 
+          <TrustCheckButton
+            wallet={resource.sellerAddress}
+            className="mt-3 inline-flex w-full items-center justify-center gap-2 rounded-lg border border-arc-border bg-white/5 px-4 py-3 text-sm font-semibold text-white hover:border-arc-blue disabled:cursor-not-allowed disabled:opacity-60"
+          />
+
           {hasInsufficientBalance ? (
             <p className="mt-3 rounded-lg border border-amber-300/30 bg-amber-300/10 p-3 text-sm leading-6 text-amber-100">
-              This wallet needs {missingBalanceUsdc} more USDC to unlock this resource.
+              This wallet needs {missingBalanceUsdc} more USDC to buy this product.
             </p>
           ) : null}
 
           <p className="mt-4 text-sm leading-6 text-slate-400">
-            The payment is a direct USDC transfer to the seller. Unlock state is stored only
+            The payment is a direct USDC transfer to the creator. Unlock state is stored only
             in this browser for the connected wallet.
           </p>
 
@@ -699,7 +705,7 @@ ${getAgentPreviewPayload(resource)}`}
               <p className="text-sm font-semibold text-white">View Receipt</p>
               <dl className="mt-3 grid gap-2 text-xs text-slate-400">
                 <div>
-                  <dt>Resource</dt>
+                  <dt>Product</dt>
                   <dd className="text-white">{resource.title}</dd>
                 </div>
                 <div>
@@ -707,7 +713,7 @@ ${getAgentPreviewPayload(resource)}`}
                   <dd className="text-white">{shortenAddress(purchase.buyerAddress)}</dd>
                 </div>
                 <div>
-                  <dt>Seller</dt>
+                  <dt>Creator</dt>
                   <dd className="text-white">{sellerDisplayName}</dd>
                 </div>
                 <div>

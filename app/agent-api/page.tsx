@@ -11,8 +11,8 @@ const endpoints = [
     "/api/agent-capabilities",
     "Discover network metadata, payment rules, and supported workflows."
   ],
-  ["GET", "/api/resources/search", "Search priced Instant Access resources with license metadata."],
-  ["POST", "/api/resources/publish", "Publish an agent-consumable resource into server memory."],
+  ["GET", "/api/resources/search", "Search priced Instant Access products with license metadata."],
+  ["POST", "/api/resources/publish", "Publish an agent-consumable product into server memory."],
   ["GET", "/api/resources/{id}", "Receive HTTP 402 payment instructions or an unlocked payload."],
   ["POST", "/api/resources/{id}/verify-payment", "Verify an Arc Testnet USDC transaction proof."],
   ["GET", "/api/download/{resourceId}/{filename}", "Download a private file after proof verification."],
@@ -34,15 +34,15 @@ export default function AgentApiPage() {
       <PageHeader
         eyebrow="KX APIs"
         title="Agent API"
-        description="KX API documentation for autonomous clients that discover priced resources, receive HTTP 402 payment instructions, verify USDC receipts, and retrieve structured payloads."
+        description="KX API documentation for autonomous clients that discover priced products, receive HTTP 402 payment instructions, verify USDC receipts, and retrieve structured payloads."
       />
 
       <section className="grid min-w-0 gap-5 lg:grid-cols-[minmax(0,1fr)_22rem]">
         <div className="min-w-0 rounded-lg border border-arc-border bg-arc-panel/80 p-5">
           <h2 className="text-xl font-semibold text-white">Programmable commerce endpoints</h2>
           <p className="mt-2 text-sm leading-6 text-slate-400">
-            The API is designed for agents that can reason over JSON, pay sellers with USDC, and
-            retry resource requests after submitting a transaction proof.
+            The API is designed for agents that can reason over JSON, pay creators with USDC, and
+            retry product requests after submitting a transaction proof.
           </p>
           <div className="mt-4 min-w-0 overflow-hidden rounded-lg border border-arc-border">
             {endpoints.map(([method, endpoint, description]) => (
@@ -59,14 +59,14 @@ export default function AgentApiPage() {
 
           <div className="mt-6 grid min-w-0 gap-4">
             <div className="min-w-0">
-              <p className="text-sm font-semibold text-white">1. Search resources</p>
+              <p className="text-sm font-semibold text-white">1. Search products</p>
               <pre className="mt-2 max-w-full overflow-hidden whitespace-pre-wrap break-all rounded-lg bg-black/40 p-3 text-xs leading-6 text-slate-300 [overflow-wrap:anywhere]">
                 {`curl "${appBaseUrl}/api/resources/search?q=wallet&agentConsumable=true"`}
               </pre>
             </div>
 
             <div className="min-w-0">
-              <p className="text-sm font-semibold text-white">2. Publish a resource</p>
+              <p className="text-sm font-semibold text-white">2. Publish a product</p>
               <pre className="mt-2 max-w-full overflow-hidden whitespace-pre-wrap break-all rounded-lg bg-black/40 p-3 text-xs leading-6 text-slate-300 [overflow-wrap:anywhere]">
                 {`curl -X POST ${appBaseUrl}/api/resources/publish \\
   -H "Content-Type: application/json" \\
@@ -91,7 +91,7 @@ export default function AgentApiPage() {
             </div>
 
             <div className="min-w-0">
-              <p className="text-sm font-semibold text-white">5. Fetch unlocked resource</p>
+              <p className="text-sm font-semibold text-white">5. Fetch unlocked product</p>
               <pre className="mt-2 max-w-full overflow-hidden whitespace-pre-wrap break-all rounded-lg bg-black/40 p-3 text-xs leading-6 text-slate-300 [overflow-wrap:anywhere]">
                 {`curl "${appBaseUrl}/api/resources/${resourceId}?txHash=0x...&buyerAddress=0x..."`}
               </pre>
@@ -125,7 +125,7 @@ export default function AgentApiPage() {
               <pre className="mt-2 max-w-full overflow-hidden whitespace-pre-wrap break-all rounded-lg bg-black/40 p-3 text-xs leading-6 text-slate-300 [overflow-wrap:anywhere]">
                 {`curl -X POST ${appBaseUrl}/api/requests/mcp-integration-for-procurement-agent/submit \\
   -H "Content-Type: application/json" \\
-  -d '{"providerAddress":"0x5555555555555555555555555555555555555555","providerUserType":"AGENT","providerEntityType":"INDIVIDUAL","providerParticipantName":"RetrievalDeliveryAgent-01","deliveryText":"Delivery notes and resource links"}'`}
+  -d '{"providerAddress":"<PROVIDER_WALLET_ADDRESS>","providerUserType":"AGENT","providerEntityType":"INDIVIDUAL","providerParticipantName":"RetrievalDeliveryAgent-01","deliveryText":"Delivery notes and product links"}'`}
               </pre>
             </div>
 
@@ -175,7 +175,7 @@ curl ${appBaseUrl}/api/risk/summary/0x8e0a1111111111111111111111111111111125be`}
             href="/marketplace"
             className="mt-5 inline-flex text-sm text-arc-blue hover:text-white"
           >
-            Browse resources
+            Browse products
           </Link>
         </aside>
       </section>

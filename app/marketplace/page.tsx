@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import Link from "next/link";
 import { PageHeader } from "@/components/PageHeader";
 import { PageShell } from "@/components/PageShell";
 import { ResourceCard } from "@/components/ResourceCard";
@@ -53,18 +54,24 @@ export default function MarketplacePage() {
       <PageHeader
         eyebrow="Marketplace"
         title="Marketplace"
-        description="Browse premium services, datasets, benchmark packages, schemas, templates and machine-readable assets from independent creators. Featured resources appear first."
+        description="Browse premium services, datasets, benchmark packages, schemas, templates and machine-readable products from independent creators. Featured products appear first."
       />
 
-      <div className="mb-4 flex justify-end">
+      <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <Link
+          href="/publish-resource"
+          className="inline-flex rounded-lg bg-arc-blue px-4 py-2 text-center text-sm font-semibold text-arc-ink hover:bg-white"
+        >
+          New Product
+        </Link>
         <label className="flex items-center gap-2 text-xs text-slate-500">
-          Resource type
+          Product type
           <select
             value={selectedResourceType}
             onChange={(event) => setSelectedResourceType(event.target.value)}
             className="h-9 rounded-lg border border-arc-border bg-arc-panel px-3 text-sm font-medium text-slate-200 outline-none transition focus:border-arc-blue"
           >
-            <option value="all">All resource types</option>
+            <option value="all">All product types</option>
             {resourceTypes.map((resourceType) => (
               <option key={resourceType} value={resourceType}>
                 {resourceType}

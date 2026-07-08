@@ -199,7 +199,7 @@ export default function NewRequestPage() {
         </label>
 
         <label className="grid gap-2">
-          <span className="text-sm font-medium text-slate-200">Resource type</span>
+          <span className="text-sm font-medium text-slate-200">Product type</span>
           <select
             {...register("resourceType")}
             className="rounded-lg border border-arc-border bg-black/30 px-4 py-3 text-white outline-none transition focus:border-arc-blue"

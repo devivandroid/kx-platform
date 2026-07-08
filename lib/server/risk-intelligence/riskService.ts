@@ -484,7 +484,9 @@ export function getRiskModelResponse() {
         ],
         negativeSignals: [
           "cancelled requests",
-          "purchase starts without completion",
+          "repeated purchase starts without completion",
+          "completed work not released after expected window",
+          "assigned job missed deadline without submission",
           "failed payments when observed"
         ]
       },

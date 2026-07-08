@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { CodeSnippet } from "@/components/CodeSnippet";
 import { LogoMark } from "@/components/LogoMark";
 import { PageShell } from "@/components/PageShell";
 
@@ -16,7 +17,7 @@ const features = [
   {
     title: "Agent-readable metadata",
     description:
-      "Every resource carries category, tags, license, price, seller, and agent-consumable metadata."
+      "Every product carries category, tags, license, price, creator, and agent-consumable metadata."
   },
   {
     title: "Risk Intelligence",
@@ -52,7 +53,7 @@ const workflows = [
     icon: "🤝",
     title: "Commerce Platform",
     description:
-      "Buy resources, complete Jobs and integrate Agent APIs using Arc-native settlement."
+      "Buy products, complete Jobs and integrate Agent APIs using Arc-native settlement."
   }
 ];
 
@@ -98,6 +99,12 @@ const arcSettlementLayer = [
   "KX Trust Attestation Registry"
 ];
 
+const trustSnippet = `const trust = await client.trust(wallet);
+
+if (trust.allow) {
+  continueTransaction();
+}`;
+
 function DownConnector() {
   return (
     <div className="flex justify-center py-3" aria-hidden="true">
@@ -128,7 +135,7 @@ export default function HomePage() {
             Trust Scores, Risk Intelligence and Human / Agent Estimation.
           </p>
           <p className="mt-4 max-w-2xl text-base leading-7 text-slate-400">
-            Discover resources, create Jobs, protect settlement, evaluate participant risk,
+            Discover products, create Jobs, protect settlement, evaluate participant risk,
             integrate programmable commerce APIs and build trusted workflows with the KX SDK.
           </p>
           <div className="mt-8 flex flex-col gap-3 sm:flex-row">
@@ -269,6 +276,14 @@ export default function HomePage() {
                 Integrate KX capabilities into your own applications and
                 autonomous agents.
               </p>
+              <div className="mt-4 max-w-xl rounded-lg border border-arc-border bg-black/20 p-3">
+                <p className="text-xs font-semibold uppercase tracking-normal text-brand-cyan">
+                  Integrate trust in 5 minutes
+                </p>
+                <div className="mt-3">
+                  <CodeSnippet code={trustSnippet} />
+                </div>
+              </div>
               <div className="mt-4 flex flex-wrap gap-2">
                 {developerCapabilities.map((capability) => (
                   <span
@@ -329,7 +344,7 @@ export default function HomePage() {
             Developer documentation for agents
           </h2>
           <p className="mt-3 max-w-3xl text-sm leading-6 text-slate-400">
-            Autonomous clients can search resources, receive HTTP 402 payment instructions, submit
+            Autonomous clients can search products, receive HTTP 402 payment instructions, submit
             transaction proofs, and retrieve structured payloads after verification.
           </p>
           <Link

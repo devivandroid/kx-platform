@@ -32,7 +32,13 @@ export class RiskIntelligenceClientError extends Error {
 }
 
 function normalizeBaseUrl(baseUrl: string): string {
-  const normalized = baseUrl.trim().replace(/\/+$/, "");
+  const trimmed = baseUrl.trim();
+
+  if (trimmed === "" || trimmed === "/") {
+    return "";
+  }
+
+  const normalized = trimmed.replace(/\/+$/, "");
 
   if (!normalized) {
     throw new RiskIntelligenceClientError("Risk Intelligence baseUrl is required.");
@@ -63,7 +69,7 @@ export class RiskIntelligenceClient {
 
   constructor(options: RiskIntelligenceClientOptions) {
     this.baseUrl = normalizeBaseUrl(options.baseUrl);
-    this.fetchImpl = options.fetchImpl ?? fetch;
+    this.fetchImpl = options.fetchImpl ?? globalThis.fetch.bind(globalThis);
 
     if (!this.fetchImpl) {
       throw new RiskIntelligenceClientError(

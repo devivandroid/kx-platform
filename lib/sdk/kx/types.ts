@@ -9,7 +9,7 @@ import type {
   UserType
 } from "@/types/resource";
 import type { RatingSummary, ResourceRating } from "@/lib/ratings";
-import type { RiskGuardPolicy } from "@/lib/sdk/risk-intelligence";
+import type { RiskGuardPolicy, TrustPolicyId } from "@/lib/sdk/risk-intelligence";
 
 export type KXClientOptions = {
   baseUrl: string;
@@ -260,4 +260,32 @@ export type AgentCapabilitiesResponse = Record<string, unknown>;
 export type RiskGuardInput = {
   wallet: string;
   policy: RiskGuardPolicy;
+};
+
+export type TrustWalletOptions = {
+  policyId?: TrustPolicyId;
+  source?: "internal" | "arc_network" | "combined";
+  useIndexedData?: boolean;
+};
+
+export type TrustWalletResponse = {
+  wallet: string;
+  decision: "ALLOW" | "REVIEW" | "BLOCK";
+  allow: boolean;
+  review: boolean;
+  block: boolean;
+  trustScore: number | null;
+  riskScore: number | null;
+  riskTier: string;
+  policyId: TrustPolicyId;
+  policyName: string;
+  reasons: string[];
+  estimatedIdentity: string;
+  humanProbability: number | null;
+  analysisConfidence: string;
+  snapshotVerified: boolean;
+  reportHash: string | null;
+  signatureStatus: "verified" | "unsigned" | "not_configured" | "invalid" | null;
+  attestationStatus: string;
+  lastUpdated: string | null;
 };

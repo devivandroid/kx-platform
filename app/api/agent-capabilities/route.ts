@@ -56,6 +56,7 @@ export async function GET() {
     trust_services: {
       name: "KX Trust Services",
       services: [
+        "Simple Trust API",
         "Risk Intelligence",
         "Human / Agent Estimation",
         "Arc Reputation consumption",
@@ -72,6 +73,7 @@ export async function GET() {
     risk_guard: true,
     risk_guard_endpoint: "/api/risk/guard",
     trust_policy_engine: true,
+    simple_trust_endpoint: "/api/trust/wallet/{wallet}",
     trust_policy_endpoint: "/api/trust/policy/evaluate",
     trust_policy_decisions: ["ALLOW", "REVIEW", "BLOCK"],
     built_in_trust_policies: [
@@ -101,6 +103,7 @@ export async function GET() {
       trustAttestationEndpoint: "/api/risk/attestations/{id}",
       walletTrustAttestationsEndpoint: "/api/risk/attestations/wallet/{wallet}",
       latestWalletTrustAttestationEndpoint: "/api/risk/attestations/wallet/{wallet}/latest",
+      simpleTrustEndpoint: "/api/trust/wallet/{wallet}",
       trustPolicyEndpoint: "/api/trust/policy/evaluate",
       trustAttestationPublishing: "experimental_manual_testnet",
       trustAttestationTestMode: true,
@@ -185,6 +188,14 @@ export async function GET() {
         requiredFields: ["walletAddress", "rating"],
         note: "Stores or updates one rating per wallet and resource. Purchase eligibility is enforced by the client UI in this MVP.",
         responseCodes: [201, 400]
+      },
+      {
+        id: "get_simple_trust_decision",
+        method: "GET",
+        endpoint: "/api/trust/wallet/{wallet}",
+        query: ["policyId", "source", "useIndexedData"],
+        note: "Returns a one-call ALLOW, REVIEW or BLOCK decision with trust score, risk score, policy reasons and signed snapshot metadata.",
+        responseCodes: [200, 400]
       },
       {
         id: "query_wallet_risk",

@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { RatingSummaryText, StarDisplay } from "@/components/StarRating";
+import { TrustCheckButton } from "@/components/TrustCheckButton";
 import { useWallet } from "@/hooks/useWallet";
 import {
   getEntityTypeLabel,
@@ -105,22 +106,28 @@ export function ResourceCard({ resource }: ResourceCardProps) {
             : "Inline content"}
         </p>
         <p>
-          Seller: {resource.participantName ?? resource.sellerName ?? "Independent Creator"} ·{" "}
+          Creator: {resource.participantName ?? resource.sellerName ?? "Independent Creator"} ·{" "}
           {getUserTypeLabel(resource.userType)} / {getEntityTypeLabel(resource.entityType)}
         </p>
         <p>Tags: {resource.tags.join(", ")}</p>
       </div>
 
-      <div className="mt-5 flex items-center justify-between gap-4">
+      <div className="mt-5 flex flex-wrap items-center justify-between gap-3">
         <p className="text-sm text-slate-500">
           <span className="font-semibold text-white">{resource.priceUSDC}</span> USDC
         </p>
-        <Link
-          href={`/marketplace/${resource.id}`}
-          className="text-sm font-medium text-arc-blue hover:text-white"
-        >
-          View Resource
-        </Link>
+        <div className="flex flex-wrap items-center justify-end gap-2">
+          <TrustCheckButton
+            wallet={resource.sellerAddress}
+            className="inline-flex items-center justify-center gap-2 rounded-lg border border-arc-border bg-white/5 px-3 py-2 text-xs font-semibold text-white hover:border-arc-blue disabled:cursor-not-allowed disabled:opacity-60"
+          />
+          <Link
+            href={`/marketplace/${resource.id}`}
+            className="text-sm font-medium text-arc-blue hover:text-white"
+          >
+            View Product
+          </Link>
+        </div>
       </div>
     </article>
   );

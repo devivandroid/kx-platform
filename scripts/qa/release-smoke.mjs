@@ -99,6 +99,14 @@ await test("GET /api/agent-capabilities exposes Arc metadata", async () => {
     body.capabilities?.some((capability) => capability.id === "publish_trust_attestation"),
     "missing Trust Attestation publish capability"
   );
+  assert(
+    body.capabilities?.some((capability) => capability.id === "get_simple_trust_decision"),
+    "missing simple trust decision capability"
+  );
+  assert(
+    body.simple_trust_endpoint === "/api/trust/wallet/{wallet}",
+    "missing simple trust endpoint"
+  );
   assert(body.participant_risk_profiles === true, "missing participant risk profiles flag");
   assert(body.behavioral_signals === true, "missing behavioral signals flag");
   assert(body.confidence_levels === true, "missing confidence levels flag");
@@ -124,6 +132,21 @@ await test("GET /api/agent-capabilities exposes Arc metadata", async () => {
       body.unknown_wallet_behavior.includes("block"),
     "missing unknown wallet behavior options"
   );
+});
+
+await test("GET /api/trust/wallet/[wallet] returns simple trust decision", async () => {
+  const { response, body } = await request(
+    "/api/trust/wallet/0x8e0a1111111111111111111111111111111125be?policyId=basic-safe&source=combined"
+  );
+  assert(response.status === 200, `expected 200, got ${response.status}`);
+  assert(["ALLOW", "REVIEW", "BLOCK"].includes(body.decision), "missing trust decision");
+  assert(typeof body.allow === "boolean", "missing allow boolean");
+  assert(typeof body.review === "boolean", "missing review boolean");
+  assert(typeof body.block === "boolean", "missing block boolean");
+  assert(body.policyId === "basic-safe", "wrong policy id");
+  assert(Array.isArray(body.reasons), "missing reasons");
+  assert("reportHash" in body, "missing report hash");
+  assert("signatureStatus" in body, "missing signature status");
 });
 
 await test("GET /api/reputation returns leaderboard", async () => {

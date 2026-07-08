@@ -8,6 +8,7 @@ import { PageHeader } from "@/components/PageHeader";
 import { PageShell } from "@/components/PageShell";
 import { TaskStatusBadge } from "@/components/TaskStatusBadge";
 import { TransactionStatus, type TransactionState } from "@/components/TransactionStatus";
+import { TrustCheckButton } from "@/components/TrustCheckButton";
 import {
   isEscrowConfigured,
   useEscrowContract,
@@ -200,12 +201,16 @@ export function TaskDetailsClient({ taskId }: TaskDetailsClientProps) {
     await runTx(() => assignFreelancer(task.id, freelancerAddress), "Assign provider in MetaMask.");
   };
 
-  const handleAssignApplicant = async (applicantAddress: string) => {
+  const assignCandidate = async (candidateWallet: string) => {
     if (!task) {
       return;
     }
 
-    await runTx(() => assignFreelancer(task.id, applicantAddress), "Assign provider in MetaMask.");
+    await runTx(() => assignFreelancer(task.id, candidateWallet), "Assign provider in MetaMask.");
+  };
+
+  const handleAssignApplicant = async (applicantAddress: string) => {
+    await assignCandidate(applicantAddress);
   };
 
   const handleApply = async () => {
@@ -398,7 +403,7 @@ export function TaskDetailsClient({ taskId }: TaskDetailsClientProps) {
                 <dd className="mt-1 text-white">{metadata?.license || "Not specified"}</dd>
               </div>
               <div>
-                <dt className="text-slate-500">Resource type</dt>
+                <dt className="text-slate-500">Product type</dt>
                 <dd className="mt-1 text-white">{metadata?.resourceType || "Custom Service"}</dd>
               </div>
               <div>
@@ -641,15 +646,25 @@ export function TaskDetailsClient({ taskId }: TaskDetailsClientProps) {
                           <p className="text-sm font-medium text-white">
                             {shortenAddress(applicant)}
                           </p>
-                          <button
-                            type="button"
-                            onClick={() => handleAssignApplicant(applicant)}
-                            disabled={isTxBusy}
-                            className="inline-flex items-center justify-center gap-2 rounded-lg bg-arc-blue px-3 py-2 text-sm font-semibold text-arc-ink disabled:cursor-not-allowed disabled:opacity-60"
-                          >
-                            {isTxBusy ? <LoadingSpinner /> : null}
-                            Assign
-                          </button>
+                          <div className="flex flex-wrap gap-2">
+                            <TrustCheckButton
+                              wallet={applicant}
+                              disabled={isTxBusy}
+                              onProceed={assignCandidate}
+                              allowActionLabel="Assign"
+                              reviewActionLabel="Assign Anyway"
+                              warningText="KX recommends review before assignment. You can still assign if you accept the risk."
+                            />
+                            <button
+                              type="button"
+                              onClick={() => handleAssignApplicant(applicant)}
+                              disabled={isTxBusy}
+                              className="inline-flex items-center justify-center gap-2 rounded-lg bg-arc-blue px-3 py-2 text-sm font-semibold text-arc-ink disabled:cursor-not-allowed disabled:opacity-60"
+                            >
+                              {isTxBusy ? <LoadingSpinner /> : null}
+                              Assign
+                            </button>
+                          </div>
                         </div>
                       ))
                     ) : (
@@ -683,6 +698,15 @@ export function TaskDetailsClient({ taskId }: TaskDetailsClientProps) {
                       {isTxBusy ? <LoadingSpinner /> : null}
                       Assign Provider
                     </button>
+                    <TrustCheckButton
+                      wallet={freelancerAddress}
+                      disabled={isTxBusy}
+                      className="inline-flex items-center justify-center gap-2 rounded-lg border border-arc-border bg-white/5 px-4 py-3 text-sm font-semibold text-white hover:border-arc-blue disabled:cursor-not-allowed disabled:opacity-60"
+                      onProceed={assignCandidate}
+                      allowActionLabel="Assign"
+                      reviewActionLabel="Assign Anyway"
+                      warningText="KX recommends review before assignment. You can still assign if you accept the risk."
+                    />
                   </div>
                 </details>
               </div>
@@ -694,6 +718,10 @@ export function TaskDetailsClient({ taskId }: TaskDetailsClientProps) {
                 <p className="mt-2 text-sm leading-6 text-slate-400">
                   Apply on-chain so the buyer can see your wallet and assign the Job to you.
                 </p>
+                <TrustCheckButton
+                  wallet={task.client}
+                  className="mt-4 inline-flex w-full items-center justify-center gap-2 rounded-lg border border-arc-border bg-white/5 px-4 py-3 text-sm font-semibold text-white hover:border-arc-blue disabled:cursor-not-allowed disabled:opacity-60"
+                />
                 <button
                   type="button"
                   onClick={handleApply}
@@ -797,6 +825,7 @@ export function TaskDetailsClient({ taskId }: TaskDetailsClientProps) {
           </aside>
         </div>
       ) : null}
+
     </PageShell>
   );
 }

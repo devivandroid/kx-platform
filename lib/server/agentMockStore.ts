@@ -1,6 +1,7 @@
 import { keccak256, toUtf8Bytes } from "ethers";
 import { createArcJobId, getIdentitySource } from "@/lib/arcNative";
 import { createLocalResourceId } from "@/lib/localResources";
+import { isBlockedPlaceholderWallet } from "@/lib/placeholderWallets";
 import { isPostgresEnabled, pgQuery, upsertParticipant } from "@/lib/server/postgres";
 import { getInstantResources } from "@/services/resources";
 import {
@@ -66,6 +67,26 @@ let requestsSeededPromise: Promise<void> | null = null;
 const globalStore = globalThis as typeof globalThis & {
   kxPlatformAgentStore?: Store;
 };
+
+const disabledSeedRequestIds = new Set([
+  "mcp-integration-for-procurement-agent",
+  "semantic-retrieval-pipeline-design",
+  "enterprise-agent-compliance-checklist",
+  "prompt-library-optimization-review",
+  "structured-json-knowledge-base",
+  "ai-evaluation-rubric-for-paid-resources"
+]);
+
+function isEnabledRequest(request: AgentRequestDraft): boolean {
+  return !disabledSeedRequestIds.has(request.id);
+}
+
+function isPublicResource(resource: InstantResource): boolean {
+  return (
+    !isBlockedPlaceholderWallet(resource.sellerAddress) &&
+    !isBlockedPlaceholderWallet(resource.operatorAddress)
+  );
+}
 
 function getStore(): Store {
   if (!globalStore.kxPlatformAgentStore) {
@@ -232,9 +253,9 @@ export function getServerResources(): InstantResource[] {
   const published = getStore().resources;
   const bundledIds = new Set(bundled.map((resource) => resource.id));
 
-  return [...published.filter((resource) => !bundledIds.has(resource.id)), ...bundled].map(
-    withArcNativeResource
-  );
+  return [...published.filter((resource) => !bundledIds.has(resource.id)), ...bundled]
+    .filter(isPublicResource)
+    .map(withArcNativeResource);
 }
 
 async function ensureDbResourcesSeeded() {
@@ -269,32 +290,7 @@ async function ensureDbResourcesSeeded() {
 }
 
 async function ensureDbRequestsSeeded() {
-  if (!isPostgresEnabled()) return;
-
-  requestsSeededPromise ??= (async () => {
-    for (const request of getStore().requests.map(withArcNativeRequest)) {
-      await pgQuery(
-        `
-          INSERT INTO requests (id, arc_job_id, data, created_at, updated_at)
-          VALUES ($1, $2, $3::jsonb, $4::timestamptz, NOW())
-          ON CONFLICT (id) DO NOTHING
-        `,
-        [request.id, request.arcJobId ?? createArcJobId(request.id), JSON.stringify(request), request.createdAt]
-      );
-      await upsertParticipant({
-        walletAddress: request.requesterAddress,
-        userType: request.userType ?? null,
-        entityType: request.entityType ?? null,
-        participantType: request.participantType ?? null,
-        participantName: request.participantName ?? null,
-        operatorAddress: request.operatorAddress ?? null,
-        arcIdentityId: request.arcIdentityId ?? null,
-        identitySource: request.identitySource ?? getIdentitySource(request.arcIdentityId),
-        data: { source: "request_seed", requestId: request.id }
-      });
-    }
-  })();
-
+  requestsSeededPromise ??= Promise.resolve();
   await requestsSeededPromise;
 }
 
@@ -306,7 +302,7 @@ export async function getServerResourcesAsync(): Promise<InstantResource[]> {
     "SELECT data FROM resources ORDER BY COALESCE((data->>'featured')::boolean, false) DESC, created_at DESC"
   );
   return rows.length > 0
-    ? rows.map((row) => withArcNativeResource(row.data))
+    ? rows.map((row) => withArcNativeResource(row.data)).filter(isPublicResource)
     : getServerResources();
 }
 
@@ -324,7 +320,8 @@ export async function getServerResourceByIdAsync(
     "SELECT data FROM resources WHERE id = $1 LIMIT 1",
     [id]
   );
-  return rows[0]?.data ? withArcNativeResource(rows[0].data) : getServerResourceById(id);
+  const resource = rows[0]?.data ? withArcNativeResource(rows[0].data) : getServerResourceById(id);
+  return resource && isPublicResource(resource) ? resource : undefined;
 }
 
 export function publishServerResource(
@@ -372,7 +369,7 @@ export async function publishServerResourceAsync(
 }
 
 export function getServerRequests(): AgentRequestDraft[] {
-  return getStore().requests.map(withArcNativeRequest);
+  return getStore().requests.filter(isEnabledRequest).map(withArcNativeRequest);
 }
 
 export async function getServerRequestsAsync(): Promise<AgentRequestDraft[]> {
@@ -383,7 +380,7 @@ export async function getServerRequestsAsync(): Promise<AgentRequestDraft[]> {
     "SELECT data FROM requests ORDER BY created_at DESC"
   );
   return rows.length > 0
-    ? rows.map((row) => withArcNativeRequest(row.data))
+    ? rows.map((row) => withArcNativeRequest(row.data)).filter(isEnabledRequest)
     : getServerRequests();
 }
 

@@ -77,7 +77,7 @@ export default function PublishResourcePage() {
     if (!isAddress(sellerAddress)) {
       setTxState({
         phase: "error",
-        message: "Enter a valid seller wallet address before publishing."
+        message: "Enter a valid creator wallet address before publishing."
       });
       return;
     }
@@ -138,7 +138,7 @@ export default function PublishResourcePage() {
         uploadedFiles = uploadBody.files;
       }
 
-      setTxState({ phase: "confirming", message: "Publishing resource metadata." });
+      setTxState({ phase: "confirming", message: "Publishing product metadata." });
       const resource: InstantResource = {
         id: resourceId,
         title: values.title.trim(),
@@ -170,7 +170,7 @@ export default function PublishResourcePage() {
         unlockedContentMock:
           values.unlockedContentMock.trim() ||
           (deliveryType === "inline"
-            ? "# Resource payload\n\nAdd the unlocked Markdown or JSON content here."
+            ? "# Product payload\n\nAdd the unlocked Markdown or JSON content here."
             : undefined),
         files: uploadedFiles
       };
@@ -187,12 +187,12 @@ export default function PublishResourcePage() {
       };
 
       if (!publishResponse.ok || !publishBody.resource) {
-        throw new Error(publishBody.message || publishBody.error || "Resource publish failed.");
+        throw new Error(publishBody.message || publishBody.error || "Product publish failed.");
       }
 
       setTxState({
         phase: "success",
-        message: "Instant Resource published. Redirecting to the resource detail."
+        message: "Instant Product published. Redirecting to the product detail."
       });
       router.push(`/marketplace/${resourceId}`);
     } catch (error) {
@@ -204,8 +204,8 @@ export default function PublishResourcePage() {
     <PageShell>
       <PageHeader
         eyebrow="Publish"
-        title="Publish Resource"
-        description="Publish an Instant Access knowledge asset for buyers and agents to unlock with USDC."
+        title="Publish Product"
+        description="Publish an Instant Access product for buyers and agents to buy with USDC."
       />
 
       <form
@@ -232,7 +232,7 @@ export default function PublishResourcePage() {
         </label>
 
         <label className="grid min-w-0 gap-2">
-          <span className="text-sm font-medium text-slate-200">Resource type</span>
+          <span className="text-sm font-medium text-slate-200">Product type</span>
           <select
             {...register("resourceType")}
             className="w-full min-w-0 rounded-lg border border-arc-border bg-black/30 px-4 py-3 text-white outline-none transition focus:border-arc-blue"
@@ -278,7 +278,7 @@ export default function PublishResourcePage() {
         </label>
 
         <label className="grid min-w-0 gap-2 lg:col-span-2">
-          <span className="text-sm font-medium text-slate-200">Seller address</span>
+          <span className="text-sm font-medium text-slate-200">Creator address</span>
           <input
             {...register("sellerAddress")}
             className="w-full min-w-0 rounded-lg border border-arc-border bg-black/30 px-4 py-3 text-white outline-none transition placeholder:text-slate-600 focus:border-arc-blue"
@@ -302,7 +302,7 @@ export default function PublishResourcePage() {
           {selectedUserType === "AGENT" ? (
             <span className="text-xs leading-5 text-slate-500">
               Use this when an autonomous agent or agent-controlled service is selling this
-              resource.
+              product.
             </span>
           ) : null}
         </label>
@@ -326,7 +326,7 @@ export default function PublishResourcePage() {
         </label>
 
         <label className="grid min-w-0 gap-2">
-          <span className="text-sm font-medium text-slate-200">Seller Display Name</span>
+          <span className="text-sm font-medium text-slate-200">Creator Name</span>
           <input
             {...register("participantName")}
             className="w-full min-w-0 rounded-lg border border-arc-border bg-black/30 px-4 py-3 text-white outline-none transition placeholder:text-slate-600 focus:border-arc-blue"
@@ -360,7 +360,7 @@ export default function PublishResourcePage() {
         </label>
 
         <label className="grid min-w-0 gap-2 lg:col-span-2">
-          <span className="text-sm font-medium text-slate-200">Preview text</span>
+          <span className="text-sm font-medium text-slate-200">Product Preview</span>
           <input
             {...register("previewText")}
             className="w-full min-w-0 rounded-lg border border-arc-border bg-black/30 px-4 py-3 text-white outline-none transition placeholder:text-slate-600 focus:border-arc-blue"
@@ -395,20 +395,20 @@ export default function PublishResourcePage() {
         </div>
 
         <label className="grid min-w-0 gap-2 lg:col-span-2">
-          <span className="text-sm font-medium text-slate-200">Locked content reference</span>
+          <span className="text-sm font-medium text-slate-200">Locked product reference</span>
           <input
             {...register("lockedContent")}
             className="w-full min-w-0 rounded-lg border border-arc-border bg-black/30 px-4 py-3 text-white outline-none transition placeholder:text-slate-600 focus:border-arc-blue"
-            placeholder="content://private-resource-reference"
+            placeholder="content://private-product-reference"
           />
         </label>
 
         <label className="grid min-w-0 gap-2 lg:col-span-2">
-          <span className="text-sm font-medium text-slate-200">Unlocked content preview</span>
+          <span className="text-sm font-medium text-slate-200">Unlocked product preview</span>
           <textarea
             {...register("unlockedContentMock")}
             className="min-h-32 w-full min-w-0 rounded-lg border border-arc-border bg-black/30 px-4 py-3 text-white outline-none transition placeholder:text-slate-600 focus:border-arc-blue"
-            placeholder="# Resource payload&#10;&#10;Paste the JSON or Markdown content unlocked after purchase."
+            placeholder="# Product payload&#10;&#10;Paste the JSON or Markdown content unlocked after purchase."
           />
         </label>
 
@@ -466,11 +466,11 @@ export default function PublishResourcePage() {
         </label>
 
         <label className="grid min-w-0 gap-2 lg:col-span-2">
-          <span className="text-sm font-medium text-slate-200">Description</span>
+          <span className="text-sm font-medium text-slate-200">Product Description</span>
           <textarea
             {...register("description")}
             className="min-h-40 w-full min-w-0 rounded-lg border border-arc-border bg-black/30 px-4 py-3 text-white outline-none transition placeholder:text-slate-600 focus:border-arc-blue"
-            placeholder="Describe the knowledge asset, intended audience, expected format, and acceptance criteria."
+            placeholder="Describe the product, intended audience, expected format, and acceptance criteria."
           />
         </label>
 
@@ -481,7 +481,7 @@ export default function PublishResourcePage() {
             className="inline-flex w-full items-center justify-center gap-2 rounded-lg bg-arc-mint px-5 py-3 text-sm font-semibold text-arc-ink transition hover:bg-white disabled:cursor-not-allowed disabled:opacity-60 sm:w-auto"
           >
             {isTxBusy ? <LoadingSpinner /> : null}
-            {isTxBusy ? "Saving resource..." : "Save instant resource draft"}
+            {isTxBusy ? "Saving product..." : "Save instant product draft"}
           </button>
         </div>
       </form>

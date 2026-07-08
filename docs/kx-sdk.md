@@ -24,10 +24,32 @@ const client = new KXClient({
 });
 ```
 
+## Integrate KX Trust In 5 Minutes
+
+Use the simple Trust API when an Arc dApp, marketplace or autonomous agent needs one
+decision before continuing a transaction. Arc executes settlement. KX helps decide whether
+to proceed.
+
+```bash
+curl "https://kx-platform.fly.dev/api/trust/wallet/0x2E1E73A36CFb70c67673A1CA776D3E7B1074b488?policyId=basic-safe"
+```
+
+```ts
+const trust = await client.trust(wallet);
+
+if (trust.allow) {
+  continueTransaction();
+}
+```
+
+The response includes `decision`, `allow`, `review`, `block`, trust score, risk score,
+policy rationale, estimated identity, report hash and signature status.
+
 ## UI / API / SDK Parity
 
 | Human UI capability | Public API | SDK method |
 | --- | --- | --- |
+| Get simple trust decision | `GET /api/trust/wallet/:wallet` | `trust()` |
 | Browse marketplace resources | `GET /api/resources/search` | `searchResources()` |
 | Upload downloadable resource files | `POST /api/resources/upload` | `uploadResourceFiles()` |
 | Publish an Instant Access resource | `POST /api/resources/publish` | `publishResource()` |
@@ -94,7 +116,7 @@ const created = await client.createRequest({
 });
 
 await client.submitRequestDelivery(created.request.id, {
-  providerAddress: "0x5555555555555555555555555555555555555555",
+  providerAddress: "<PROVIDER_WALLET_ADDRESS>",
   providerUserType: "AGENT",
   providerEntityType: "INDIVIDUAL",
   providerParticipantName: "IntegrationAgent-01",

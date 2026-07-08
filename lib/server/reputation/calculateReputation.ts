@@ -50,6 +50,30 @@ function formatPercent(value: number): string {
   return `${Math.round(value * 100)}%`;
 }
 
+function getMetadataString(
+  metadata: ReputationEvent["metadata"] | undefined,
+  key: string
+): string | null {
+  const value = metadata?.[key];
+  return typeof value === "string" ? value : null;
+}
+
+function getEventTime(event: ReputationEvent): number {
+  const time = Date.parse(event.timestamp);
+  return Number.isFinite(time) ? time : 0;
+}
+
+function hasElapsedSince(event: ReputationEvent, days: number): boolean {
+  const time = getEventTime(event);
+  return time > 0 && Date.now() - time > days * 86_400_000;
+}
+
+function isPastDeadline(deadline: string | null): boolean {
+  if (!deadline) return false;
+  const deadlineTime = Date.parse(deadline);
+  return Number.isFinite(deadlineTime) && deadlineTime < Date.now();
+}
+
 function getSignalStatus(value: number, watchAt: number, elevatedAt: number): BehavioralSignalStatus {
   if (!Number.isFinite(value)) return "Unknown";
   if (value >= elevatedAt) return "Elevated";
@@ -173,9 +197,7 @@ export function calculateReputation(wallet: string, events: ReputationEvent[]): 
   const successfulPayments = walletEvents.filter((event) =>
     ["RESOURCE_PURCHASED", "RESOURCE_SOLD", "PAYMENT_VERIFIED", "FUNDS_RELEASED"].includes(event.eventType)
   ).length;
-  const failedPayments = walletEvents.filter(
-    (event) => event.eventType === "REQUEST_CANCELLED" || event.eventType === "RESOURCE_PURCHASE_STARTED"
-  ).length;
+  const failedPayments = walletEvents.filter((event) => event.eventType === "REQUEST_CANCELLED").length;
   const startedPurchases = walletEvents.filter(
     (event) => event.eventType === "RESOURCE_PURCHASE_STARTED"
   ).length;
@@ -234,7 +256,7 @@ export function calculateReputation(wallet: string, events: ReputationEvent[]): 
   let score = 500;
   score += walletEvents.filter((event) => positiveEvents.has(event.eventType)).length * 35;
   score -= walletEvents.filter((event) => negativeEvents.has(event.eventType)).length * 85;
-  score -= incompletePurchases * 45;
+  score -= incompletePurchases * 18;
   score += Math.min(totalVolume * 1.4, 180);
   score += Math.min(resourcesDownloaded * 18, 90);
   score += Math.min(fundsReleased * 40, 120);
@@ -269,7 +291,7 @@ export function calculateReputation(wallet: string, events: ReputationEvent[]): 
   const averageTransactionAmount =
     completedVolumeEvents.length > 0 ? totalCompletedVolume / completedVolumeEvents.length : 0;
   const behavioralRisk =
-    purchaseStartAbandonmentRate * 24 +
+    purchaseStartAbandonmentRate * 10 +
     (paymentAttempts > 0 ? (1 - paymentSuccessRate) * 22 : 0) +
     (escrowsFunded > 0 ? (1 - Math.min(escrowCompletionRate, 1)) * 14 : 0) +
     (downloadAfterPurchaseRate === 0 && completedPurchases > 0 ? 8 : 0) +
@@ -367,6 +389,42 @@ export function calculateReputation(wallet: string, events: ReputationEvent[]): 
   const pushRisk = (label: string, severity: RiskSignalSeverity, description: string) => {
     riskSignals.push({ label, severity, description });
   };
+  const releasedRequestIds = new Set(
+    walletEvents
+      .filter((event) => event.eventType === "FUNDS_RELEASED" && event.requestId)
+      .map((event) => event.requestId as string)
+  );
+  const submittedRequestIds = new Set(
+    walletEvents
+      .filter((event) => event.eventType === "DELIVERY_SUBMITTED" && event.requestId)
+      .map((event) => event.requestId as string)
+  );
+  const completedWorkNotReleased = walletEvents.some(
+    (event) =>
+      event.eventType === "DELIVERY_SUBMITTED" &&
+      event.requestId &&
+      !releasedRequestIds.has(event.requestId) &&
+      hasElapsedSince(event, 7)
+  );
+  const missedAssignedDeadline = walletEvents.some((event) => {
+    if (event.eventType !== "ESCROW_FUNDED" && event.eventType !== "REQUEST_CREATED") {
+      return false;
+    }
+
+    const requestId = event.requestId;
+    if (!requestId || submittedRequestIds.has(requestId) || releasedRequestIds.has(requestId)) {
+      return false;
+    }
+
+    const providerAddress = getMetadataString(event.metadata, "providerAddress");
+    const assignedProviderAddress = getMetadataString(event.metadata, "assignedProviderAddress");
+    const deadline = getMetadataString(event.metadata, "deadline");
+    const providerMatchesWallet = [providerAddress, assignedProviderAddress]
+      .filter((value): value is string => Boolean(value))
+      .some((value) => value.toLowerCase() === wallet.toLowerCase());
+
+    return providerMatchesWallet && isPastDeadline(deadline);
+  });
 
   if (!participantType) {
     pushRisk(
@@ -382,17 +440,31 @@ export function calculateReputation(wallet: string, events: ReputationEvent[]): 
       "Risk profile is based on fewer than 5 KX events."
     );
   }
-  if (purchaseStartAbandonmentRate >= 0.5) {
+  if (purchaseStartAbandonmentRate >= 0.8 && incompletePurchases >= 3) {
     pushRisk(
       "Purchase starts without completion",
       "Elevated",
-      "Several purchase attempts started without corresponding completion events."
+      "Repeated marketplace purchase attempts started without corresponding completion events."
     );
   } else if (purchaseStartAbandonmentRate >= 0.2) {
     pushRisk(
       "Purchase starts without completion",
       "Watch",
-      "Some purchase attempts started without corresponding completion events."
+      "Some marketplace purchase attempts started without corresponding completion events."
+    );
+  }
+  if (completedWorkNotReleased) {
+    pushRisk(
+      "Completed work not released",
+      "Elevated",
+      "A deliverable was submitted and the expected release window has elapsed without funds release."
+    );
+  }
+  if (missedAssignedDeadline) {
+    pushRisk(
+      "Assigned job missed deadline",
+      "Elevated",
+      "An assigned job passed its delivery deadline without submitted or completed work."
     );
   }
   if (walletEvents.some((event) => event.eventType === "REQUEST_CANCELLED")) {

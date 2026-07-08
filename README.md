@@ -121,6 +121,7 @@ KX Trust Services are reusable services over Arc-compatible Jobs. Current servic
 Primary Trust Engine APIs:
 
 ```txt
+GET  /api/trust/wallet/:wallet
 GET  /api/risk/profile/:wallet
 GET  /api/risk/snapshots/:wallet
 POST /api/trust/policy/evaluate
@@ -128,10 +129,31 @@ POST /api/risk/snapshots/:wallet
 GET  /api/agent-capabilities
 ```
 
+### Integrate KX Trust In 5 Minutes
+
+Use the simple Trust API when an Arc dApp, marketplace or autonomous agent needs one decision
+before continuing a transaction. Arc executes settlement. KX helps decide whether to proceed.
+
+```bash
+curl "https://kx-platform.fly.dev/api/trust/wallet/0x2E1E73A36CFb70c67673A1CA776D3E7B1074b488?policyId=basic-safe"
+```
+
+```ts
+const trust = await client.trust(wallet);
+
+if (trust.allow) {
+  continueTransaction();
+}
+```
+
+The response includes `decision`, `allow`, `review`, `block`, trust score, risk score, policy
+rationale, estimated identity, report hash and signature status.
+
 Developer catalog:
 
 | Service | API | SDK | Intended use |
 | --- | --- | --- | --- |
+| Simple Trust API | `GET /api/trust/wallet/:wallet` | `client.trust(wallet)` | Add a one-call ALLOW, REVIEW or BLOCK decision before settlement. |
 | Trust Score API | `GET /api/risk/profile/:wallet` | `client.getProfile(wallet)` | Show positive trust evidence before transacting. |
 | Risk Intelligence API | `GET /api/risk/profile/:wallet?source=combined` | `client.getCombinedProfile(wallet)` | Evaluate risk score, tier, confidence and explainable signals. |
 | Human / Agent Estimation | `GET /api/risk/network/:wallet` | `client.getNetworkProfile(wallet)` | Estimate whether Arc Network behavior looks human, agent-like, mixed or unknown. |
@@ -177,6 +199,12 @@ HTTP 402 programmable commerce flow for autonomous clients and agent integration
 Wallet, agent and organization risk signals based on KX activity.
 
 ![Risk Intelligence dashboard](docs/screenshots/risk-api.png)
+
+### Trust Services
+
+Reusable KX Trust Engine services, APIs and SDK capabilities for builders.
+
+![KX Trust Services](docs/screenshots/trust-services.png)
 
 ### Requests
 
@@ -536,7 +564,7 @@ Example delivery submit:
 ```bash
 curl -X POST https://kx-platform.fly.dev/api/requests/mcp-integration-for-procurement-agent/submit \
   -H "Content-Type: application/json" \
-  -d '{"providerAddress":"0x5555555555555555555555555555555555555555","deliveryText":"Delivery notes"}'
+  -d '{"providerAddress":"<PROVIDER_WALLET_ADDRESS>","deliveryText":"Delivery notes"}'
 ```
 
 Example capabilities:

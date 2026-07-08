@@ -3,6 +3,7 @@ import {
   getEntityTypeFromLegacy,
   isParticipantType
 } from "@/lib/participants";
+import { isBlockedPlaceholderWallet } from "@/lib/placeholderWallets";
 import { isPostgresEnabled, pgQuery, upsertParticipant } from "@/lib/server/postgres";
 import type { ReputationEvent } from "@/types/reputation";
 
@@ -18,6 +19,21 @@ function getEventParticipantType(event: ReputationEvent) {
   return isParticipantType(event.metadata?.participantType)
     ? event.metadata.participantType
     : null;
+}
+
+function isPlaceholderSeedEvent(event: ReputationEvent): boolean {
+  const operatorAddress =
+    typeof event.metadata?.operatorAddress === "string" ? event.metadata.operatorAddress : null;
+
+  return (
+    isBlockedPlaceholderWallet(event.walletAddress) ||
+    isBlockedPlaceholderWallet(event.counterpartyAddress) ||
+    isBlockedPlaceholderWallet(operatorAddress)
+  );
+}
+
+function getPublicSeedEvents(): ReputationEvent[] {
+  return seedEvents.filter((event) => !isPlaceholderSeedEvent(event));
 }
 
 let riskEventsSeededPromise: Promise<void> | null = null;
@@ -308,7 +324,7 @@ export const seedEvents: ReputationEvent[] = [
 
 function getStore(): ReputationStore {
   if (!globalStore.knowledgeExchangeReputationStore) {
-    globalStore.knowledgeExchangeReputationStore = { events: [...seedEvents] };
+    globalStore.knowledgeExchangeReputationStore = { events: getPublicSeedEvents() };
   }
   return globalStore.knowledgeExchangeReputationStore;
 }
@@ -427,7 +443,7 @@ async function ensureDbRiskEventsSeeded() {
   if (!isPostgresEnabled()) return;
 
   riskEventsSeededPromise ??= (async () => {
-    for (const event of seedEvents) {
+    for (const event of getPublicSeedEvents()) {
       await pgQuery(
         `
           INSERT INTO risk_events (id, wallet_address, event_type, data, occurred_at, created_at)

@@ -1,7 +1,16 @@
+import { CodeSnippet } from "@/components/CodeSnippet";
 import { PageHeader } from "@/components/PageHeader";
 import { PageShell } from "@/components/PageShell";
 
 const services = [
+  {
+    name: "Simple Trust API",
+    description:
+      "One-call trust decision for external builders that need ALLOW, REVIEW or BLOCK before settlement.",
+    endpoint: "GET /api/trust/wallet/:wallet",
+    sdk: "client.trust(wallet)",
+    useCase: "Add a trust check to an Arc dApp or agent workflow in a few minutes."
+  },
   {
     name: "Trust Score API",
     description:
@@ -60,6 +69,12 @@ const services = [
   }
 ];
 
+const trustSnippet = `const trust = await client.trust(wallet);
+
+if (trust.allow) {
+  continueTransaction();
+}`;
+
 export default function TrustServicesPage() {
   return (
     <PageShell>
@@ -75,6 +90,16 @@ export default function TrustServicesPage() {
           Engine layer: Risk Intelligence, Human / Agent Estimation, Signed Trust Snapshots, Trust
           Policy decisions and experimental Trust Attestations.
         </p>
+        <div className="mt-4 grid gap-4 lg:grid-cols-[1fr_1fr] lg:items-start">
+          <div>
+            <h2 className="text-lg font-semibold text-white">Integrate trust in 5 minutes</h2>
+            <p className="mt-2 text-sm leading-6 text-slate-400">
+              Arc executes settlement. KX helps builders decide whether a wallet should proceed,
+              be reviewed, or be blocked before the transaction continues.
+            </p>
+          </div>
+          <CodeSnippet code={trustSnippet} />
+        </div>
         <p className="mt-3 rounded-lg border border-amber-300/30 bg-amber-300/10 p-3 text-sm leading-6 text-amber-100">
           This is not KYC, AML, compliance screening or identity verification. Trust Attestation
           publishing is manual TEST mode for Arc Testnet.

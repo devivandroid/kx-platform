@@ -8,7 +8,7 @@ import { WalletMenuButton } from "@/components/WalletMenuButton";
 const navItems = [
   { label: "Home", href: "/" },
   { label: "Marketplace", href: "/marketplace" },
-  { label: "Publish Resource", href: "/publish-resource" },
+  { label: "New Product", href: "/publish-resource" },
   { label: "Jobs", href: "/requests" },
   { label: "My Activity", href: "/my-activity" },
   { label: "Trust Engine", href: "/reputation" },

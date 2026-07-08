@@ -711,7 +711,7 @@ export function ReputationLookup() {
         <span>
           <span className="font-semibold text-slate-200">Use indexed data</span>
           <span className="block">
-            Uses a stored Arc Network snapshot if it is less than 1 minute old. Uncheck to refresh from Arc.
+            Uses a stored Arc Network snapshot if it is less than 1 day old in this demo. Uncheck to refresh from Arc.
           </span>
         </span>
       </label>
@@ -1175,8 +1175,8 @@ export function ReputationLookup() {
                 {[
                   ["Network transactions", result.activity?.successfulPayments ?? result.metrics.successfulPayments],
                   ["Failed payments", result.activity?.failedPayments ?? 0],
-                  ["Resources purchased", result.activity?.resourcesPurchased ?? result.metrics.resourcesPurchased],
-                  ["Resources downloaded", result.activity?.resourcesDownloaded ?? result.metrics.resourcesDownloaded],
+                  ["Products purchased", result.activity?.resourcesPurchased ?? result.metrics.resourcesPurchased],
+                  ["Products downloaded", result.activity?.resourcesDownloaded ?? result.metrics.resourcesDownloaded],
                   ["Jobs created", result.activity?.requestsCreated ?? 0],
                   [
                     "Protected transactions funded",

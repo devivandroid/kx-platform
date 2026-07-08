@@ -51,7 +51,7 @@ export function StarDisplay({ rating, label, size = "sm" }: StarDisplayProps) {
 
 export function StarInput({ value, onChange, disabled = false }: StarInputProps) {
   return (
-    <div className="inline-flex items-center gap-1" role="radiogroup" aria-label="Rate this resource">
+    <div className="inline-flex items-center gap-1" role="radiogroup" aria-label="Rate this product">
       {[1, 2, 3, 4, 5].map((star) => (
         <button
           key={star}

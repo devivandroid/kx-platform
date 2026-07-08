@@ -31,6 +31,8 @@ import type {
   SearchResourcesResponse,
   SubmitDeliveryInput,
   SubmitDeliveryResponse,
+  TrustWalletOptions,
+  TrustWalletResponse,
   UnlockedResourceResponse,
   UploadResourceFilesResponse,
   VerifyPaymentResponse
@@ -51,7 +53,13 @@ export class KXClientError extends Error {
 }
 
 function normalizeBaseUrl(baseUrl: string): string {
-  const normalized = baseUrl.trim().replace(/\/+$/, "");
+  const trimmed = baseUrl.trim();
+
+  if (trimmed === "" || trimmed === "/") {
+    return "";
+  }
+
+  const normalized = trimmed.replace(/\/+$/, "");
 
   if (!normalized) {
     throw new KXClientError("KX baseUrl is required.");
@@ -80,7 +88,7 @@ export class KXClient {
 
   constructor(options: KXClientOptions) {
     this.baseUrl = normalizeBaseUrl(options.baseUrl);
-    this.fetchImpl = options.fetchImpl ?? fetch;
+    this.fetchImpl = options.fetchImpl ?? globalThis.fetch.bind(globalThis);
 
     if (!this.fetchImpl) {
       throw new KXClientError(
@@ -96,6 +104,16 @@ export class KXClient {
 
   getAgentCapabilities(): Promise<AgentCapabilitiesResponse> {
     return this.get("/api/agent-capabilities");
+  }
+
+  trust(wallet: string, options: TrustWalletOptions = {}): Promise<TrustWalletResponse> {
+    return this.get(
+      appendQuery(`/api/trust/wallet/${encodeURIComponent(wallet)}`, {
+        policyId: options.policyId,
+        source: options.source,
+        useIndexedData: options.useIndexedData
+      })
+    );
   }
 
   searchResources(params?: SearchResourcesParams): Promise<SearchResourcesResponse> {
@@ -283,7 +301,9 @@ export class KXClient {
       });
     } catch (error) {
       throw new KXClientError(
-        `KX request failed before receiving a response: ${url}`,
+        `KX request failed before receiving a response: ${url}${
+          error instanceof Error ? ` (${error.message})` : ""
+        }`,
         { details: error }
       );
     }
@@ -306,7 +326,9 @@ export class KXClient {
       });
     } catch (error) {
       throw new KXClientError(
-        `KX request failed before receiving a response: ${url}`,
+        `KX request failed before receiving a response: ${url}${
+          error instanceof Error ? ` (${error.message})` : ""
+        }`,
         { details: error }
       );
     }
@@ -328,7 +350,9 @@ export class KXClient {
       });
     } catch (error) {
       throw new KXClientError(
-        `KX request failed before receiving a response: ${url}`,
+        `KX request failed before receiving a response: ${url}${
+          error instanceof Error ? ` (${error.message})` : ""
+        }`,
         { details: error }
       );
     }

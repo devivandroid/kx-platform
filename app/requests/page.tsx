@@ -6,6 +6,7 @@ import { LoadingSpinner } from "@/components/LoadingSpinner";
 import { PageHeader } from "@/components/PageHeader";
 import { PageShell } from "@/components/PageShell";
 import { TaskCard } from "@/components/TaskCard";
+import { TrustCheckButton } from "@/components/TrustCheckButton";
 import { isEscrowConfigured, useRecentTasks, useTaskCount } from "@/hooks/useEscrowContract";
 import {
   getTaskDisplayDescription,
@@ -41,6 +42,10 @@ const nonProductionRequestPatterns = [
 ];
 
 function isProductionRequest(request: EscrowTask) {
+  if (request.metadataURI.toLowerCase().includes("kx-arc-runner")) {
+    return false;
+  }
+
   const text = [
     getTaskDisplayTitle(request.metadataURI, `Request #${request.id.toString()}`),
     getTaskDisplayDescription(request.metadataURI)
@@ -117,13 +122,13 @@ export default function RequestsPage() {
 
       <div className="mb-4 flex justify-end">
         <label className="flex items-center gap-2 text-xs text-slate-500">
-          Resource type
+          Product type
           <select
             value={selectedResourceType}
             onChange={(event) => setSelectedResourceType(event.target.value)}
             className="h-9 rounded-lg border border-arc-border bg-arc-panel px-3 text-sm font-medium text-slate-200 outline-none transition focus:border-arc-blue"
           >
-            <option value="all">All resource types</option>
+            <option value="all">All product types</option>
             {resourceTypes.map((resourceType) => (
               <option key={resourceType} value={resourceType}>
                 {resourceType}
@@ -172,7 +177,7 @@ export default function RequestsPage() {
         <div className="rounded-lg border border-dashed border-arc-border bg-arc-panel/80 p-6">
           <p className="text-sm font-semibold text-white">No matching Jobs yet</p>
           <p className="mt-2 max-w-xl text-sm leading-6 text-slate-400">
-            Try another resource type or create the first matching Job.
+            Try another product type or create the first matching Job.
           </p>
           <Link
             href="/requests/new"
@@ -222,6 +227,12 @@ export default function RequestsPage() {
                     {request.identitySource === "arc_identity" ? "Arc Identity" : "Self-declared"}
                   </span>
                   <span>Arc Native</span>
+                </div>
+                <div className="mt-5 flex justify-end">
+                  <TrustCheckButton
+                    wallet={request.requesterAddress}
+                    className="inline-flex items-center justify-center gap-2 rounded-lg border border-arc-border bg-white/5 px-3 py-2 text-xs font-semibold text-white hover:border-arc-blue disabled:cursor-not-allowed disabled:opacity-60"
+                  />
                 </div>
               </article>
             ))}
