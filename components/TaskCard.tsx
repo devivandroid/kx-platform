@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { TaskStatusBadge } from "@/components/TaskStatusBadge";
+import { TrustBadge } from "@/components/TrustBadge";
 import { TrustCheckButton } from "@/components/TrustCheckButton";
 import { getIdentitySourceLabel } from "@/lib/arcNative";
 import type { EscrowTask } from "@/lib/contracts/microWorkEscrow";
@@ -96,6 +97,9 @@ export function TaskCard({ task }: TaskCardProps) {
             >
               {shortenAddress(task.client)}
             </a>
+          </p>
+          <p>
+            <TrustBadge wallet={task.client} />
           </p>
           <p>
             Provider:{" "}

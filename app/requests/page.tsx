@@ -6,6 +6,7 @@ import { LoadingSpinner } from "@/components/LoadingSpinner";
 import { PageHeader } from "@/components/PageHeader";
 import { PageShell } from "@/components/PageShell";
 import { TaskCard } from "@/components/TaskCard";
+import { TrustBadge } from "@/components/TrustBadge";
 import { TrustCheckButton } from "@/components/TrustCheckButton";
 import { isEscrowConfigured, useRecentTasks, useTaskCount } from "@/hooks/useEscrowContract";
 import {
@@ -228,7 +229,8 @@ export default function RequestsPage() {
                   </span>
                   <span>Arc Native</span>
                 </div>
-                <div className="mt-5 flex justify-end">
+                <div className="mt-5 flex flex-wrap items-center justify-end gap-2">
+                  <TrustBadge wallet={request.requesterAddress} />
                   <TrustCheckButton
                     wallet={request.requesterAddress}
                     className="inline-flex items-center justify-center gap-2 rounded-lg border border-arc-border bg-white/5 px-3 py-2 text-xs font-semibold text-white hover:border-arc-blue disabled:cursor-not-allowed disabled:opacity-60"

@@ -1,4 +1,4 @@
-# KX SDK
+﻿# KX SDK
 
 The KX TypeScript SDK wraps the public APIs used by the web app.
 It is kept inside this repository for now and is not published to npm.
@@ -50,6 +50,8 @@ policy rationale, estimated identity, report hash and signature status.
 | Human UI capability | Public API | SDK method |
 | --- | --- | --- |
 | Get simple trust decision | `GET /api/trust/wallet/:wallet` | `trust()` |
+| Evaluate a two-wallet interaction | `POST /api/trust/evaluate-transaction` | `evaluateInteraction()` |
+| Protect Circle App Kit flows | `GET /protected-transactions` | `trust()` before `kit.send()` / `kit.bridge()` / server swap |
 | Browse marketplace resources | `GET /api/resources/search` | `searchResources()` |
 | Upload downloadable resource files | `POST /api/resources/upload` | `uploadResourceFiles()` |
 | Publish an Instant Access resource | `POST /api/resources/publish` | `publishResource()` |
@@ -74,6 +76,55 @@ policy rationale, estimated identity, report hash and signature status.
 | Evaluate a participant with Risk Guard | `POST /api/risk/guard` | `evaluateTransactionRisk()` |
 | List demo participants | `GET /api/risk/participants` | `listRiskParticipants()` |
 | Discover API capabilities | `GET /api/agent-capabilities` | `getAgentCapabilities()` |
+
+## Evaluate an interaction
+
+Use this when a builder wants to check both sides of an interaction before allowing settlement to
+continue. KX uses the latest Trust Snapshot when available and only evaluates a wallet when no
+snapshot exists.
+
+```ts
+const evaluation = await client.evaluateInteraction({
+  from: buyer,
+  to: seller,
+  amount: "25.00",
+  asset: "USDC",
+  context: "marketplace",
+  policy: "basic-safe"
+});
+
+if (evaluation.allow) {
+  continueTransaction();
+}
+```
+
+## Protected Circle App Kit Flows
+
+KX can sit in front of common App Kit flows as a trust guardrail. Protected Send and Protected
+Bridge use the connected browser wallet adapter. Protected Swap is server-side only and remains
+disabled until a secure App Kit server wallet and `KIT_KEY` are configured.
+
+```ts
+const trust = await client.trust(recipient);
+
+if (trust.allow) {
+  await kit.send({
+    from: { adapter, chain: ArcTestnet },
+    to: recipient,
+    amount: "25.00",
+    token: "USDC"
+  });
+}
+```
+
+Required packages:
+
+```bash
+npm install @circle-fin/app-kit @circle-fin/adapter-viem-v2 viem
+```
+
+Keep `KIT_KEY` server-side only. Do not expose App Kit server credentials through browser-visible
+environment variables.
 
 ## Resource Purchase Flow
 

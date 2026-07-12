@@ -3,8 +3,9 @@ import type { RiskProfile } from "@/lib/server/risk-intelligence/types";
 
 function getScope(profile: RiskProfile): string {
   if (profile.dataSource === "arc_network") return "Arc Testnet RPC activity only";
+  if (profile.dataSource === "cross_chain") return "External cross-chain context only";
   if (profile.dataSource === "combined") {
-    return "KX activity and limited Arc Testnet RPC activity";
+    return "KX activity, limited Arc Testnet RPC activity and optional external context";
   }
   if (profile.dataSource === "no_data") return "No KX or Arc Network data";
   return "KX activity only";
@@ -49,6 +50,7 @@ export function toRiskProfileApiResponse(profile: RiskProfile) {
     metadata: profile.metadata,
     identityEstimation: profile.identityEstimation,
     trustSnapshot: profile.trustSnapshot,
+    crossChainContext: profile.crossChainContext,
     arcReputation: profile.arcReputation,
     arcValidations: profile.arcValidations,
     metrics: {

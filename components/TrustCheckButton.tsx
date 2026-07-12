@@ -3,6 +3,7 @@
 import { useMemo, useState } from "react";
 import { isAddress } from "ethers";
 import { LoadingSpinner } from "@/components/LoadingSpinner";
+import { trustBadgeRefreshEvent } from "@/components/TrustBadge";
 import { KXClient, type TrustWalletResponse } from "@/lib/sdk/kx";
 import { shortenAddress } from "@/lib/web3";
 
@@ -22,6 +23,7 @@ type TrustCheckButtonProps = {
   allowActionLabel?: string;
   reviewActionLabel?: string;
   warningText?: string;
+  onResult?: (result: TrustWalletResponse) => void;
 };
 
 const defaultButtonClass =
@@ -35,7 +37,8 @@ export function TrustCheckButton({
   onProceed,
   allowActionLabel = "Continue",
   reviewActionLabel = "Continue Anyway",
-  warningText = "KX recommends review before continuing. You can still proceed if you accept the risk."
+  warningText = "KX recommends review before continuing. You can still proceed if you accept the risk.",
+  onResult
 }: TrustCheckButtonProps) {
   const [trustCheck, setTrustCheck] = useState<TrustCheckState | null>(null);
   const kxClient = useMemo(() => new KXClient({ baseUrl: "" }), []);
@@ -57,6 +60,12 @@ export function TrustCheckButton({
     try {
       const result = await kxClient.trust(wallet);
       setTrustCheck({ wallet, phase: "success", result });
+      onResult?.(result);
+      window.dispatchEvent(
+        new CustomEvent(trustBadgeRefreshEvent, {
+          detail: { wallet }
+        })
+      );
     } catch (error) {
       setTrustCheck({
         wallet,

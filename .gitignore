@@ -37,4 +37,7 @@ typechain-types
 private-resources/
 dev-server*.log
 *.log
+*.tgz
+.npm-cache/
+.circle-app-kit-inspect/
 branding/option4_only.png

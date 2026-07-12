@@ -125,6 +125,7 @@ GET  /api/trust/wallet/:wallet
 GET  /api/risk/profile/:wallet
 GET  /api/risk/snapshots/:wallet
 POST /api/trust/policy/evaluate
+POST /api/trust/evaluate-transaction
 POST /api/risk/snapshots/:wallet
 GET  /api/agent-capabilities
 ```
@@ -149,11 +150,35 @@ if (trust.allow) {
 The response includes `decision`, `allow`, `review`, `block`, trust score, risk score, policy
 rationale, estimated identity, report hash and signature status.
 
+For two-sided transactions, builders can evaluate both wallets before settlement:
+
+```bash
+curl -X POST "https://kx-platform.fly.dev/api/trust/evaluate-transaction" \
+  -H "Content-Type: application/json" \
+  -d '{"from":"0xBuyer...","to":"0xCreator...","amount":"25.00","asset":"USDC","context":"marketplace","policy":"basic-safe"}'
+```
+
+```ts
+const evaluation = await client.evaluateInteraction({
+  from: buyer,
+  to: seller,
+  amount: "25.00",
+  asset: "USDC",
+  context: "marketplace"
+});
+
+if (evaluation.allow) {
+  continueTransaction();
+}
+```
+
 Developer catalog:
 
 | Service | API | SDK | Intended use |
 | --- | --- | --- | --- |
 | Simple Trust API | `GET /api/trust/wallet/:wallet` | `client.trust(wallet)` | Add a one-call ALLOW, REVIEW or BLOCK decision before settlement. |
+| Evaluate Interaction API | `POST /api/trust/evaluate-transaction` | `client.evaluateInteraction(input)` | Evaluate both wallets before marketplace, Job or payment settlement. |
+| Protected Transactions | `GET /protected-transactions` | `client.trust(recipient)` | Gate Circle App Kit send, bridge and server-side swap flows with KX trust checks. |
 | Trust Score API | `GET /api/risk/profile/:wallet` | `client.getProfile(wallet)` | Show positive trust evidence before transacting. |
 | Risk Intelligence API | `GET /api/risk/profile/:wallet?source=combined` | `client.getCombinedProfile(wallet)` | Evaluate risk score, tier, confidence and explainable signals. |
 | Human / Agent Estimation | `GET /api/risk/network/:wallet` | `client.getNetworkProfile(wallet)` | Estimate whether Arc Network behavior looks human, agent-like, mixed or unknown. |
@@ -161,6 +186,49 @@ Developer catalog:
 | Signed Trust Snapshots | `GET /api/risk/snapshots/:wallet` | `client.listTrustSnapshots(wallet)` | Verify KX-signed off-chain trust reports. |
 | Trust Attestations | `POST /api/risk/snapshots/:wallet` | `client.publishTrustSnapshot(wallet, { mode: "test" })` | Manually publish a TEST attestation on Arc Testnet. |
 | TypeScript SDK | `GET /api/agent-capabilities` | `RiskIntelligenceClient` | Integrate Trust Engine APIs into apps and agents. |
+
+### Protected Transactions With Circle App Kit
+
+KX includes a lightweight Arc App Kit integration for Protected Send, Protected Bridge and
+server-side Protected Swap guardrails. It is not a DEX, bridge or wallet product. The flow runs
+KX trust first, then hands off to Circle App Kit only after user confirmation.
+
+Required packages:
+
+```bash
+npm install @circle-fin/app-kit @circle-fin/adapter-viem-v2 viem
+```
+
+Server-side swap configuration:
+
+```env
+KIT_KEY=
+```
+
+Keep `KIT_KEY` server-side only. Never expose Circle credentials through `NEXT_PUBLIC_*`.
+
+```ts
+const trust = await client.trust(recipient);
+
+if (trust.allow) {
+  await kit.send({
+    from: { adapter, chain: ArcTestnet },
+    to: recipient,
+    amount: "25.00",
+    token: "USDC"
+  });
+}
+```
+
+Supported testnet behavior:
+
+- **Protected Send**: checks the recipient wallet, then executes App Kit Send from the connected browser wallet on Arc Testnet.
+- **Protected Bridge**: checks the destination wallet, then executes App Kit Bridge for the supported testnet chains shown in the UI.
+- **Protected Swap**: runs the KX trust gate, then calls a secure server route. Swap execution remains disabled until a server-side App Kit wallet/credential model is configured.
+
+Browser-wallet limitation: Send and Bridge use the connected browser wallet adapter via
+`createViemAdapterFromProvider({ provider })`. Swap is server-side only and must not expose
+server credentials in the browser.
 
 ## Live Demo
 
@@ -700,6 +768,33 @@ coverage. This is estimation, not identity verification, KYC, AML, compliance sc
 detection certainty. The estimation and transaction sample are cached in PostgreSQL by wallet when
 `DATABASE_URL` is configured.
 
+### Lightweight Cross-Chain Context
+
+KX can optionally enrich Analysis Confidence with lightweight cross-chain context for Ethereum,
+Base and BNB Chain. This does not modify Trust Score or Risk Score.
+
+Endpoint:
+
+```bash
+curl https://kx-platform.fly.dev/api/risk/cross-chain/0x...
+curl "https://kx-platform.fly.dev/api/risk/cross-chain/0x...?refresh=true"
+curl "https://kx-platform.fly.dev/api/risk/cross-chain/0x...?force=true"
+curl https://kx-platform.fly.dev/api/risk/cross-chain/health
+```
+
+The adapter only collects wallet age, transaction count, active days, contract interaction count,
+last activity, source, status and index timestamp from indexed explorer APIs. It uses Etherscan API
+v2 as the primary multichain provider with `chainid=1`, `chainid=8453` and `chainid=56`, then falls
+back to Blockscout REST APIs when configured or available. It does not collect token balances, NFT history, logs, events,
+internal transactions or full transfer history. Unknown values are returned as `null`. If a provider
+only exposes limited coverage, KX reports `coverage: "limited"` rather than presenting partial
+history as complete data.
+
+Successful results are stored in PostgreSQL in `cross_chain_context` and cached for 24 hours.
+Provider failures use a short two-minute cache window so a transient explorer outage does not hide later data.
+Trust analysis never waits for external-chain indexers; refresh runs only after a successful analysis
+or an explicit request. Use `force=true` to bypass cached unavailable results during diagnostics.
+
 ## KX Trust Engine
 
 KX stores an off-chain **Trust Snapshot** whenever a wallet is analyzed by Risk Intelligence.
@@ -996,6 +1091,7 @@ Tables created automatically on first server access:
 - `arc_network_snapshots`: cached Arc Network activity snapshots for Risk Intelligence.
 - `wallet_identity_estimations`: cached Human / Agent behavioral estimations by wallet.
 - `wallet_transaction_samples`: latest 50 transaction samples used for identity estimation; replaced on fresh reindex.
+- `cross_chain_context`: optional Ethereum, Base and BNB Chain context cached for 24 hours.
 - `trust_snapshots`: historical off-chain Trust Snapshots used as the foundation for future Trust Attestations.
 
 The same schema is versioned under `supabase/migrations/`.
@@ -1134,6 +1230,16 @@ NEXT_PUBLIC_WS_URL=wss://rpc.testnet.arc.network
 NEXT_PUBLIC_CHAIN_ID=5042002
 NEXT_PUBLIC_EXPLORER_URL=https://testnet.arcscan.app
 ARCSCAN_API_BASE_URL=https://testnet.arcscan.app/api/v2
+ETHEREUM_BLOCKSCOUT_API_URL=https://eth.blockscout.com/api/v2
+BASE_BLOCKSCOUT_API_URL=https://base.blockscout.com/api/v2
+BNB_BLOCKSCOUT_API_URL=
+ETHERSCAN_API_URL=https://api.etherscan.io/v2/api
+BASESCAN_API_URL=https://api.etherscan.io/v2/api
+BNB_ETHERSCAN_API_URL=https://api.etherscan.io/v2/api
+BSCSCAN_API_URL=https://api.bscscan.com/api
+ETHERSCAN_API_KEY=
+BASESCAN_API_KEY=
+BSCSCAN_API_KEY=
 NEXT_PUBLIC_USDC_ADDRESS=0x3600000000000000000000000000000000000000
 NEXT_PUBLIC_ESCROW_CONTRACT=
 
@@ -1149,7 +1255,9 @@ PRIVATE_KEY=
 
 `PRIVATE_KEY` is only for local contract deployment. Never commit it, expose it in frontend code, upload it to GitHub, or set it on Fly.io unless you are intentionally running a private deployment job.
 
-`DATABASE_URL` enables shared Supabase/PostgreSQL persistence for resources, request drafts, verified receipts, ratings, risk events, Arc Network snapshots and participant metadata. Leave it empty for local in-memory preview mode.
+`DATABASE_URL` enables shared Supabase/PostgreSQL persistence for resources, request drafts, verified receipts, ratings, risk events, Arc Network snapshots, cross-chain context and participant metadata. Leave it empty for local in-memory preview mode.
+
+Explorer API variables are optional but recommended for the public demo. `ETHERSCAN_API_KEY` enables the primary Etherscan API v2 provider across Ethereum, Base and BNB Chain when the key/plan supports those `chainid` values. `BASESCAN_API_KEY` and `BSCSCAN_API_KEY` may override per-chain explorer access. Blockscout URLs remain fallback providers, but some networks may block public Blockscout domains through DNS or proxy policy. Leave all provider variables empty to keep the feature in a neutral not-configured state. Use `/api/risk/cross-chain/health` to inspect provider configuration, DNS resolution, HTTPS status and provider messages without exposing secrets.
 
 `SUPABASE_SERVICE_ROLE_KEY` is server-only and is used to upload and stream private resource files through KX API routes. Never expose it in frontend code, screenshots, public logs, GitHub, or `NEXT_PUBLIC_*` variables.
 
@@ -1344,4 +1452,3 @@ Treat anything written on-chain as public, even if the UI hides it from casual v
 ## License
 
 MIT
-

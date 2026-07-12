@@ -7,6 +7,7 @@ const footerLinks = [
   { label: "Jobs", href: "/requests", external: false },
   { label: "Trust Engine", href: "/reputation", external: false },
   { label: "Trust Services", href: "/trust-services", external: false },
+  { label: "Protected Tx", href: "/protected-transactions", external: false },
   { label: "Agent API", href: "/agent-api", external: false },
   {
     label: "GitHub",

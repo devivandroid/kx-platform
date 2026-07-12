@@ -13,6 +13,7 @@ const navItems = [
   { label: "My Activity", href: "/my-activity" },
   { label: "Trust Engine", href: "/reputation" },
   { label: "Trust Services", href: "/trust-services" },
+  { label: "Protected Tx", href: "/protected-transactions" },
   { label: "Agent API", href: "/agent-api" },
   { label: "Walkthrough", href: "/walkthrough" }
 ];

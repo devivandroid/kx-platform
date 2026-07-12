@@ -9,14 +9,17 @@ import { getEvents, getEventsAsync } from "@/lib/server/reputation/reputationEve
 import { toRiskProfileApiResponse } from "@/lib/server/risk-intelligence/riskProfileResponse";
 import { getCachedRead } from "@/lib/server/risk-intelligence/requestCache";
 import { createAndStoreTrustSnapshot } from "@/lib/server/risk-intelligence/trustSnapshots";
+import { getCachedCrossChainContext } from "@/lib/server/risk-intelligence/crossChainContext";
 import type {
   ConfidenceLevel,
   IdentityMatchStatus,
+  IdentitySignalResult,
   RiskDataSource,
   RiskGuardCheck,
   RiskGuardDecision,
   RiskGuardPolicy,
   RiskProfile,
+  CrossChainContext,
   UnknownWalletBehavior
 } from "@/lib/server/risk-intelligence/types";
 
@@ -91,7 +94,8 @@ export async function getRiskProfileAsync(
       ...profile,
       ...registries
     };
-    const result = includeTrustSnapshot ? await attachTrustSnapshot(enriched) : enriched;
+    const withCrossChain = await attachCachedCrossChainContext(enriched);
+    const result = includeTrustSnapshot ? await attachTrustSnapshot(withCrossChain) : withCrossChain;
     logTiming("internal_profile", {
       total: nowMs() - totalStart,
       snapshot: nowMs() - snapshotStart
@@ -116,6 +120,420 @@ async function attachTrustSnapshot(profile: RiskProfile): Promise<RiskProfile> {
   return {
     ...profile,
     trustSnapshot: await createAndStoreTrustSnapshot(profile)
+  };
+}
+
+async function attachCachedCrossChainContext(
+  profile: RiskProfile,
+  options: { allowBaseline?: boolean; allowIdentityEstimation?: boolean } = {}
+): Promise<RiskProfile> {
+  const crossChainContext = await getCachedCrossChainContext(profile.wallet);
+  if (!crossChainContext) return profile;
+
+  if (options.allowBaseline && profile.profileStatus === "no_data" && crossChainContext.summary.networksAnalyzed > 0) {
+    return buildCrossChainBaselineProfile(profile, crossChainContext);
+  }
+
+  const identityEstimation =
+    options.allowIdentityEstimation && crossChainContext.summary.networksAnalyzed > 0
+      ? buildCrossChainIdentityEstimation(profile, crossChainContext)
+      : profile.identityEstimation;
+
+  const confidenceLevel = crossChainContext.confidenceBoost
+    ? maxConfidence(profile.scores.confidenceLevel, crossChainContext.confidenceBoost)
+    : profile.scores.confidenceLevel;
+
+  return {
+    ...profile,
+    scores: {
+      ...profile.scores,
+      confidenceLevel
+    },
+    identityEstimation,
+    crossChainContext
+  };
+}
+
+function getRiskTierFromScore(riskScore: number): RiskProfile["scores"]["riskTier"] {
+  if (riskScore <= 24) return "Low";
+  if (riskScore <= 59) return "Medium";
+  return "High";
+}
+
+function getDaysSince(value: string | null): number | undefined {
+  if (!value) return undefined;
+  const time = new Date(value).getTime();
+  if (!Number.isFinite(time)) return undefined;
+  return Math.max(0, Math.floor((Date.now() - time) / 86_400_000));
+}
+
+function buildCrossChainBaselineProfile(profile: RiskProfile, crossChainContext: CrossChainContext): RiskProfile {
+  const summary = crossChainContext.summary;
+  const walletAgeDays = summary.earliestActivity ? getDaysSince(summary.earliestActivity) : undefined;
+  const daysSinceLastActivity = getDaysSince(summary.lastActivity);
+  const txCount = summary.transactionCount ?? 0;
+  const activeDays = summary.activeDays ?? 0;
+  const contractInteractions = summary.contractInteractionCount ?? 0;
+  const evidenceCount = summary.networksAnalyzed;
+  const establishedHistory = (walletAgeDays ?? 0) >= 180;
+  const activeHistory = activeDays >= 30 || txCount >= 100;
+  const recentEnough = daysSinceLastActivity === undefined || daysSinceLastActivity <= 90;
+
+  let trustScore = 50;
+  if (establishedHistory) trustScore += 10;
+  if (activeHistory) trustScore += 10;
+  if (contractInteractions >= 20) trustScore += 4;
+  if (recentEnough && summary.lastActivity) trustScore += 3;
+  trustScore = Math.min(75, trustScore);
+
+  let riskScore = 58;
+  if (establishedHistory) riskScore -= 8;
+  if (activeHistory) riskScore -= 6;
+  if (contractInteractions >= 20) riskScore -= 2;
+  if (!recentEnough) riskScore += 5;
+  riskScore = Math.max(32, Math.min(59, riskScore));
+
+  const financialBehaviorScore = Math.round(trustScore * 10);
+  const behavioralSignals: RiskProfile["behavioralSignals"] = [
+    {
+      label: "Established Ethereum history",
+      value: walletAgeDays !== undefined ? `${walletAgeDays} days` : "Unavailable",
+      status: establishedHistory ? "Normal" : "Unknown",
+      description: "External indexed history is used as supporting context only."
+    },
+    {
+      label: "Active across observed days",
+      value: activeDays > 0 ? `${activeDays} days` : "Unavailable",
+      status: activeDays > 0 ? "Normal" : "Unknown",
+      description: "Activity breadth is not proof of trust, but improves evidence quality."
+    },
+    {
+      label: "Cross-chain transaction count",
+      value: txCount > 0 ? String(txCount) : "Unavailable",
+      status: txCount > 0 ? "Normal" : "Unknown",
+      description: "KX uses indexed transaction counts without token history, logs or internals."
+    },
+    {
+      label: "Cross-chain coverage",
+      value: summary.coverage,
+      status: summary.coverage === "full" ? "Normal" : "Watch",
+      description: "Coverage is reported from the indexed provider and is not treated as KX or Arc activity."
+    }
+  ];
+
+  const riskSignals: RiskProfile["riskSignals"] = [
+    {
+      label: "Established Ethereum history lowers baseline risk",
+      severity: "Info",
+      description: "Long-lived Ethereum activity provides external context, but does not prove commerce outcomes."
+    },
+    {
+      label: "Activity breadth supports moderate trust",
+      severity: "Info",
+      description:
+        activeDays > 0
+          ? `The wallet is active across ${activeDays} observed external-chain days.`
+          : "No active-day coverage was available from the indexed provider."
+    },
+    {
+      label: "Limited evidence about transaction outcomes",
+      severity: "Watch",
+      description:
+        "Cross-chain context does not prove successful commerce outcomes, counterparty satisfaction or dispute history."
+    }
+  ];
+
+  return {
+    ...profile,
+    dataSource: "cross_chain",
+    profileStatus: summary.networksAnalyzed > 0 ? "limited" : "no_data",
+    message: "External cross-chain context found for this wallet.",
+    recommendation:
+      "Use this as a conservative baseline only. Review before transacting unless your policy explicitly allows cross-chain-only evidence.",
+    scores: {
+      financialBehaviorScore,
+      trustScore,
+      riskScore,
+      riskTier: getRiskTierFromScore(riskScore),
+      confidenceLevel: crossChainContext.confidenceBoost ?? "Medium"
+    },
+    activity: {
+      ...profile.activity,
+      completedActions: 0,
+      successfulPayments: 0,
+      failedPayments: 0,
+      totalCompletedVolumeUSDC: "0.00",
+      averageTransactionAmountUSDC: "0.00",
+      averageActionsPerDay: "0.00",
+      lastActivity: undefined,
+      daysSinceLastActivity: undefined,
+      activityLevel: "Unknown",
+      evidenceCount
+    },
+    metadata: {
+      ...profile.metadata,
+      dataFreshness: "External context",
+      lastIndexed: crossChainContext.refreshedAt ?? undefined,
+      cacheSource: crossChainContext.cacheSource,
+      coverage: {
+        fullHistory: crossChainContext.summary.coverage === "full",
+        description: `External indexed context from supported networks. Coverage: ${crossChainContext.summary.coverage}.`
+      }
+    },
+    identityEstimation: buildCrossChainIdentityEstimation(profile, crossChainContext),
+    behavioralSignals,
+    riskSignals,
+    crossChainContext,
+    limitations: [
+      ...riskServiceLimitations,
+      "Cross-chain-only profiles are conservative baseline assessments.",
+      "External activity does not prove transaction outcomes, identity, intent, KYC, AML or compliance status."
+    ]
+  };
+}
+
+function identitySignal(
+  label: string,
+  result: IdentitySignalResult,
+  explanation: string
+): NonNullable<RiskProfile["identityEstimation"]>["signals"][number] {
+  return { label, result, explanation };
+}
+
+function getCrossChainCoverageSignalResult(
+  coverage: CrossChainContext["summary"]["coverage"] | "partial"
+): IdentitySignalResult {
+  if (coverage === "full") return "Positive signal";
+  if (coverage === "partial") return "Weak positive signal";
+  if (coverage === "limited") return "Limited evidence";
+  return "Unknown";
+}
+
+function getCrossChainIdentityConfidence(input: {
+  networksAnalyzed: number;
+  coverage: CrossChainContext["summary"]["coverage"];
+  txCount: number;
+  activeDays: number;
+  walletAgeDays?: number;
+  knownSignals: number;
+}): ConfidenceLevel {
+  if (input.networksAnalyzed === 0 || input.knownSignals < 3) return "Low";
+  if (
+    input.coverage === "full" &&
+    input.txCount >= 50 &&
+    input.activeDays >= 20 &&
+    (input.walletAgeDays ?? 0) >= 180
+  ) {
+    return "High";
+  }
+  if (input.txCount >= 10 || input.activeDays >= 5) return "Medium";
+  return "Low";
+}
+
+function getCrossChainEstimatedIdentity(input: {
+  humanPoints: number;
+  agentPoints: number;
+  criticalAgentSignals: number;
+  knownSignals: number;
+}): Pick<NonNullable<RiskProfile["identityEstimation"]>, "estimatedUserType" | "probability"> {
+  if (input.knownSignals < 3) return { estimatedUserType: "Unknown", probability: 50 };
+
+  if (input.criticalAgentSignals >= 2 || input.agentPoints - input.humanPoints >= 30) {
+    const probability = Math.max(10, Math.min(40, 45 - Math.floor((input.agentPoints - input.humanPoints) / 4)));
+    return {
+      estimatedUserType: probability <= 30 ? "Likely Agent" : "Leaning Agent",
+      probability
+    };
+  }
+
+  if (input.humanPoints - input.agentPoints >= 90 && input.criticalAgentSignals === 0) {
+    return {
+      estimatedUserType: "Likely Human",
+      probability: Math.min(88, 80 + Math.floor((input.humanPoints - input.agentPoints - 90) / 5))
+    };
+  }
+
+  if (input.humanPoints > input.agentPoints) {
+    return {
+      estimatedUserType: "Leaning Human",
+      probability: Math.max(56, Math.min(78, 55 + Math.floor((input.humanPoints - input.agentPoints) / 3)))
+    };
+  }
+
+  if (input.agentPoints > input.humanPoints) {
+    return {
+      estimatedUserType: "Leaning Agent",
+      probability: Math.max(35, Math.min(44, 45 - Math.floor((input.agentPoints - input.humanPoints) / 6)))
+    };
+  }
+
+  return { estimatedUserType: "Mixed / Inconclusive", probability: 55 };
+}
+
+function buildCrossChainIdentityEstimation(
+  profile: RiskProfile,
+  crossChainContext: CrossChainContext
+): NonNullable<RiskProfile["identityEstimation"]> {
+  const summary = crossChainContext.summary;
+  const walletAgeDays = summary.earliestActivity ? getDaysSince(summary.earliestActivity) : undefined;
+  const daysSinceLastActivity = getDaysSince(summary.lastActivity);
+  const txCount = summary.transactionCount ?? 0;
+  const outboundTxCount = summary.outboundTransactionCount ?? 0;
+  const activeDays = summary.activeDays ?? 0;
+  const contractInteractions = summary.contractInteractionCount ?? 0;
+  const interactionRatio = txCount > 0 ? contractInteractions / txCount : 0;
+
+  let humanPoints = 0;
+  let agentPoints = 0;
+  let criticalAgentSignals = 0;
+  const signals: NonNullable<RiskProfile["identityEstimation"]>["signals"] = [];
+
+  if (outboundTxCount > 0) {
+    humanPoints += 18;
+    signals.push(
+      identitySignal(
+        "EOA detected",
+        "Human",
+        `${outboundTxCount} outbound normal transactions were observed. This is one signal only and does not prove the wallet belongs to a human.`
+      )
+    );
+  } else {
+    signals.push(
+      identitySignal("EOA detected", "Unknown", "No outbound normal transactions were available in the indexed context.")
+    );
+  }
+
+  if (walletAgeDays === undefined) {
+    signals.push(identitySignal("Wallet age", "Unknown", "Wallet age was not available from indexed context."));
+  } else if (walletAgeDays < 7) {
+    agentPoints += 18;
+    criticalAgentSignals += 1;
+    signals.push(identitySignal("Wallet age", "Agent-like", `Very recent wallet: ${walletAgeDays} days old.`));
+  } else if (walletAgeDays >= 180) {
+    humanPoints += 22;
+    signals.push(identitySignal("Wallet age", "Human", `Long-lived wallet history: ${walletAgeDays} days.`));
+  } else {
+    humanPoints += 8;
+    signals.push(identitySignal("Wallet age", "Human", `Established wallet history: ${walletAgeDays} days.`));
+  }
+
+  if (activeDays >= 30) {
+    humanPoints += 18;
+    signals.push(identitySignal("Active days", "Human", `Activity spans ${activeDays} observed days.`));
+  } else if (activeDays > 0 && txCount >= 30 && activeDays <= 2) {
+    agentPoints += 18;
+    criticalAgentSignals += 1;
+    signals.push(
+      identitySignal("Active days", "Agent-like", `${txCount} transactions are concentrated into only ${activeDays} active day(s).`)
+    );
+  } else if (activeDays > 0) {
+    humanPoints += 6;
+    signals.push(identitySignal("Active days", "Human", `Limited but observable activity across ${activeDays} days.`));
+  } else {
+    signals.push(identitySignal("Active days", "Unknown", "Active-day coverage was not available."));
+  }
+
+  if (txCount >= 50 && txCount <= 1_000) {
+    humanPoints += 12;
+    signals.push(identitySignal("Transaction count", "Human", `${txCount} indexed transactions were observed.`));
+  } else if (txCount > 1_000 && activeDays < 20) {
+    agentPoints += 16;
+    criticalAgentSignals += 1;
+    signals.push(identitySignal("Transaction count", "Agent-like", `${txCount} transactions over a short active window is automation-like.`));
+  } else if (txCount > 0) {
+    humanPoints += 4;
+    signals.push(identitySignal("Transaction count", "Human", `${txCount} indexed transactions were observed.`));
+  } else {
+    signals.push(identitySignal("Transaction count", "Unknown", "Transaction count was not available."));
+  }
+
+  if (contractInteractions >= 10 && interactionRatio < 0.85) {
+    humanPoints += 8;
+    signals.push(
+      identitySignal(
+        "Contract interaction diversity",
+        "Human",
+        `${contractInteractions} contract interactions were observed without extreme concentration.`
+      )
+    );
+  } else if (txCount >= 30 && interactionRatio >= 0.95) {
+    agentPoints += 12;
+    signals.push(
+      identitySignal(
+        "Contract interaction diversity",
+        "Agent-like",
+        "Nearly all indexed transactions are contract interactions, which can indicate automation."
+      )
+    );
+  } else if (contractInteractions > 0) {
+    signals.push(
+      identitySignal(
+        "Contract interaction diversity",
+        "Unknown",
+        `${contractInteractions} contract interactions were observed, but diversity is not conclusive.`
+      )
+    );
+  } else {
+    signals.push(identitySignal("Contract interaction diversity", "Unknown", "No contract interaction coverage was available."));
+  }
+
+  if (daysSinceLastActivity === undefined) {
+    signals.push(identitySignal("Activity recency", "Unknown", "Last activity was not available."));
+  } else if (daysSinceLastActivity <= 365) {
+    humanPoints += 6;
+    signals.push(identitySignal("Activity recency", "Human", `Last indexed activity was ${daysSinceLastActivity} days ago.`));
+  } else {
+    signals.push(identitySignal("Activity recency", "Unknown", `Last indexed activity was ${daysSinceLastActivity} days ago.`));
+  }
+
+  signals.push(
+    identitySignal(
+      "Cross-chain coverage",
+      getCrossChainCoverageSignalResult(summary.coverage),
+      `Coverage is ${summary.coverage} across ${summary.networksAnalyzed} analyzed network(s). Coverage improves evidence quality but does not prove identity.`
+    )
+  );
+
+  const scoredSignals = signals.filter((signalItem) => signalItem.label !== "Cross-chain coverage");
+  const knownSignals = scoredSignals.filter((signalItem) => signalItem.result !== "Unknown").length;
+  const { estimatedUserType, probability } = getCrossChainEstimatedIdentity({
+    humanPoints,
+    agentPoints,
+    criticalAgentSignals,
+    knownSignals
+  });
+  const confidence = getCrossChainIdentityConfidence({
+    networksAnalyzed: summary.networksAnalyzed,
+    coverage: summary.coverage,
+    txCount,
+    activeDays,
+    walletAgeDays,
+    knownSignals
+  });
+  const comparableDeclaredUserType =
+    profile.participant.kxDeclaredUserType && profile.participant.kxDeclaredUserType !== "unknown"
+      ? profile.participant.kxDeclaredUserType
+      : "unknown";
+
+  return {
+    estimatedUserType,
+    probability,
+    confidence,
+    evidenceSource: "Cross-Chain Context",
+    kxDeclaredUserType: profile.participant.kxDeclaredUserType ?? "unknown",
+    arcDeclaredIdentity: profile.participant.arcIdentityId ?? null,
+    arcDeclaredUserType: "unknown",
+    declaredUserType: profile.participant.kxDeclaredUserType ?? "unknown",
+    identityMatch: getIdentityMatch(comparableDeclaredUserType, estimatedUserType),
+    cacheSource: "live_estimation",
+    lastEstimatedAt: crossChainContext.refreshedAt ?? new Date().toISOString(),
+    signals,
+    limitations: [
+      "This is behavioral estimation, not identity verification.",
+      "Uses real indexed cross-chain context when KX and Arc evidence are unavailable.",
+      "Does not use self-declared userType as model input.",
+      "Not KYC, AML, sanctions, compliance screening or bot detection certainty."
+    ]
   };
 }
 
@@ -313,7 +731,8 @@ export async function getArcNetworkRiskProfileAsync(
         ...profile,
         ...registries
       };
-      const result = includeTrustSnapshot ? await attachTrustSnapshot(enriched) : enriched;
+      const withCrossChain = await attachCachedCrossChainContext(enriched);
+      const result = includeTrustSnapshot ? await attachTrustSnapshot(withCrossChain) : withCrossChain;
       logTiming("network_profile", {
         total: nowMs() - totalStart,
         snapshot: nowMs() - snapshotStart
@@ -354,9 +773,13 @@ export async function getCombinedRiskProfileAsync(
         ...combined,
         ...registries
       };
+      const withCrossChain = await attachCachedCrossChainContext(enrichedCombined, {
+        allowBaseline: true,
+        allowIdentityEstimation: true
+      });
       const result = includeTrustSnapshot
-        ? await attachTrustSnapshot(enrichedCombined)
-        : enrichedCombined;
+        ? await attachTrustSnapshot(withCrossChain)
+        : withCrossChain;
       logTiming("combined_profile", {
         total: nowMs() - totalStart,
         trustEngine: snapshotStart - trustStart,
@@ -432,6 +855,7 @@ export function toRiskSummaryResponse(profile: RiskProfile) {
     },
     identityEstimation: profile.identityEstimation,
     trustSnapshot: profile.trustSnapshot,
+    crossChainContext: profile.crossChainContext,
     arcReputation: profile.arcReputation,
     arcValidations: profile.arcValidations,
     limitations: riskServiceLimitations
@@ -452,6 +876,7 @@ export function toRiskSignalsResponse(profile: RiskProfile) {
     recommendation: profile.recommendation,
     identityEstimation: profile.identityEstimation,
     trustSnapshot: profile.trustSnapshot,
+    crossChainContext: profile.crossChainContext,
     arcReputation: profile.arcReputation,
     arcValidations: profile.arcValidations,
     behavioralSignals: profile.behavioralSignals,
@@ -529,7 +954,9 @@ export function getRiskModelResponse() {
       knowledgeExchange: "Internal marketplace, request, delivery, payment and rating activity.",
       arcNetwork:
         "Limited Arc Testnet RPC adapter using transaction count, native USDC balance and account code.",
-      combined: "Weighted profile using KX activity and Arc Network RPC signals."
+      crossChain:
+        "Conservative fallback baseline using real indexed Ethereum/Base/BNB context when KX and Arc data are unavailable.",
+      combined: "Weighted profile using KX activity, Arc Network RPC signals and optional external context."
     },
     limitations: riskServiceLimitations
   };

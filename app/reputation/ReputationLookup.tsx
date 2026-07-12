@@ -7,7 +7,7 @@ import { LoadingSpinner } from "@/components/LoadingSpinner";
 type ReputationLookupResult = {
   ok: boolean;
   wallet: string;
-  dataSource?: "knowledge_exchange" | "arc_network" | "combined" | "no_data";
+  dataSource?: "knowledge_exchange" | "arc_network" | "cross_chain" | "combined" | "no_data";
   profileStatus?: "active" | "limited" | "no_data";
   message?: string;
   recommendation?: string;
@@ -59,6 +59,49 @@ type ReputationLookupResult = {
       description?: string;
     };
   };
+  crossChainContext?: {
+    schemaVersion?: string;
+    wallet: string;
+    status: "available" | "partial" | "not_configured" | "unavailable";
+    cacheSource: "postgres_cache" | "fresh" | "none";
+    refreshedAt: string | null;
+    expiresAt: string | null;
+    networks: Array<{
+      network: "ethereum" | "base" | "bnb";
+      schemaVersion?: string;
+      label: string;
+      status: "available" | "not_configured" | "unavailable";
+      walletAgeDays: number | null;
+      transactionCount: number | null;
+      outboundTransactionCount?: number | null;
+      activeDays: number | null;
+      contractInteractionCount: number | null;
+      firstActivity: string | null;
+      lastActivity: string | null;
+      source: string | null;
+      indexedAt: string | null;
+      coverage: "full" | "limited" | "unavailable";
+      providerErrors?: string[];
+      blockRange?: {
+        fromBlock: number;
+        toBlock: number;
+        blocksAnalyzed: number;
+      };
+      message?: string;
+    }>;
+    summary: {
+      networksAnalyzed: number;
+      transactionCount: number | null;
+      outboundTransactionCount?: number | null;
+      activeDays: number | null;
+      contractInteractionCount: number | null;
+      earliestActivity: string | null;
+      lastActivity: string | null;
+      coverage: "full" | "limited" | "unavailable";
+    };
+    confidenceBoost: string | null;
+    limitations: string[];
+  };
   identityEstimation?: {
     estimatedUserType:
       | "Likely Human"
@@ -69,7 +112,7 @@ type ReputationLookupResult = {
       | "Unknown";
     probability: number;
     confidence: string;
-    evidenceSource: "Arc Network";
+    evidenceSource: "Arc Network" | "Cross-Chain Context" | "Arc Network + Cross-Chain Context";
     kxDeclaredUserType?: "HUMAN" | "AGENT" | "unknown";
     arcDeclaredIdentity?: string | null;
     arcDeclaredUserType?: "HUMAN" | "AGENT" | "unknown";
@@ -79,7 +122,13 @@ type ReputationLookupResult = {
     lastEstimatedAt?: string;
     signals: Array<{
       label: string;
-      result: "Human" | "Agent-like" | "Unknown";
+      result:
+        | "Human"
+        | "Agent-like"
+        | "Positive signal"
+        | "Weak positive signal"
+        | "Limited evidence"
+        | "Unknown";
       explanation: string;
     }>;
     limitations: string[];
@@ -286,6 +335,50 @@ function getStatusAccent(status: string): string {
   return "text-slate-400";
 }
 
+function getIdentitySignalDisplayLabel(signal: { label: string; result: string }): string {
+  if (signal.label === "Cross-chain coverage" || signal.label === "Network Coverage") {
+    if (signal.result === "Positive signal") return "Supporting evidence";
+    if (signal.result === "Weak positive signal" || signal.result === "Limited evidence") {
+      return "Limited supporting evidence";
+    }
+    return "Unknown";
+  }
+
+  if (signal.result === "Unknown") return "Neutral";
+
+  if (signal.result === "Human") {
+    if (signal.label === "EOA detected" || signal.label === "Wallet age") {
+      return "Likely Human";
+    }
+    return "Leaning Human";
+  }
+
+  if (signal.result === "Agent-like") {
+    if (signal.label === "Account Type" || signal.label === "EOA detected") {
+      return "Likely Agent";
+    }
+    return "Leaning Agent";
+  }
+
+  return signal.result;
+}
+
+function getIdentitySignalAccent(result: string): string {
+  if (result === "Likely Human" || result === "Leaning Human") {
+    return "border-emerald-300/40 bg-emerald-300/10 text-emerald-100";
+  }
+  if (result === "Supporting evidence") {
+    return "border-sky-300/40 bg-sky-300/10 text-sky-100";
+  }
+  if (result === "Limited supporting evidence") {
+    return "border-amber-300/40 bg-amber-300/10 text-amber-100";
+  }
+  if (result === "Likely Agent" || result === "Leaning Agent") {
+    return "border-red-300/40 bg-red-300/10 text-red-100";
+  }
+  return "border-slate-500/40 bg-slate-500/10 text-slate-300";
+}
+
 function getArcRegistryStatusLabel(status: ArcRegistrySignal["status"]): string {
   if (status === "found") return "Available";
   if (status === "not_configured") return "Not configured";
@@ -449,6 +542,12 @@ function formatDate(value: string | null | undefined): string {
   return value ? new Date(value).toLocaleString() : "Unknown";
 }
 
+function getCrossChainStatusLabel(network: { status: string }): string {
+  return network.status === "available"
+    ? "✅ Available"
+    : "⏳ Additional network support coming soon.";
+}
+
 function formatKXLastActivity(value: string | null | undefined): string {
   return value ? formatDate(value) : "No KX activity yet";
 }
@@ -475,6 +574,64 @@ function getBehavioralSignalValue(
   label: string
 ): string {
   return profile?.behavioralSignals?.find((signal) => signal.label === label)?.value ?? "Unavailable";
+}
+
+function getFirstNumber(value: string | number | null | undefined): number | null {
+  if (typeof value === "number") return Number.isFinite(value) ? value : null;
+  if (!value) return null;
+  const match = String(value).match(/-?\d+(\.\d+)?/);
+  if (!match) return null;
+  const parsed = Number(match[0]);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function getBehavioralSignalStrength(signal: { label: string; value: string | number; status: string }): string {
+  const label = signal.label.replace(/^Arc Network: /, "");
+  const value = getFirstNumber(signal.value);
+  const normalizedValue = String(signal.value).toLowerCase();
+
+  if (label === "Established Ethereum history") {
+    if (value === null) return "Unknown";
+    if (value > 1000) return "Strong";
+    if (value >= 365) return "Positive";
+    return "Neutral";
+  }
+  if (label === "Active across observed days" || label === "Active days") {
+    if (value === null) return "Unknown";
+    if (value > 50) return "Strong";
+    if (value >= 15) return "Positive";
+    return "Neutral";
+  }
+  if (label === "Cross-chain transaction count") {
+    if (value === null) return "Unknown";
+    if (value > 100) return "Strong";
+    if (value >= 25) return "Positive";
+    return "Neutral";
+  }
+  if (label === "Contract interactions" || label === "Contract interaction diversity") {
+    if (value === null) return "Unknown";
+    if (value > 75) return "Strong";
+    if (value >= 20) return "Positive";
+    return "Neutral";
+  }
+  if (label === "Cross-chain coverage") {
+    if (normalizedValue.includes("full")) return "Strong";
+    if (normalizedValue.includes("partial")) return "Positive";
+    if (normalizedValue.includes("limited")) return "Neutral";
+    return "Unknown";
+  }
+
+  if (signal.status === "Elevated") return "Elevated";
+  if (signal.status === "Watch" || signal.status === "Monitor") return "Watch";
+  if (signal.status === "Normal") return "Positive";
+  return "Unknown";
+}
+
+function getEvidenceStrengthAccent(strength: string): string {
+  if (strength === "Strong" || strength === "Positive") return "text-emerald-200";
+  if (strength === "Watch") return "text-amber-200";
+  if (strength === "Elevated") return "text-red-200";
+  return "text-slate-400";
 }
 
 function getVisibleBehavioralSignals(result: ReputationLookupResult) {
@@ -515,6 +672,7 @@ export function ReputationLookup() {
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const [loadingStepIndex, setLoadingStepIndex] = useState(0);
+  const [refreshingCrossChain, setRefreshingCrossChain] = useState(false);
   const [publishingSnapshot, setPublishingSnapshot] = useState(false);
   const [selectedPolicyId, setSelectedPolicyId] = useState<TrustPolicyId>("basic-safe");
   const [evaluatingPolicy, setEvaluatingPolicy] = useState(false);
@@ -541,6 +699,24 @@ export function ReputationLookup() {
     return body as TrustPolicyEvaluationResult;
   };
 
+  const refreshCrossChainContext = async (targetWallet: string) => {
+    setRefreshingCrossChain(true);
+    try {
+      const response = await fetch(`/api/risk/cross-chain/${targetWallet}?force=true`);
+      const body = await response.json();
+      if (!response.ok || !body.crossChainContext) return;
+      setResult((current) =>
+        current?.wallet?.toLowerCase() === targetWallet.toLowerCase()
+          ? { ...current, crossChainContext: body.crossChainContext }
+          : current
+      );
+    } catch {
+      // Cross-chain context is optional and must not block Trust Engine results.
+    } finally {
+      setRefreshingCrossChain(false);
+    }
+  };
+
   const lookup = async () => {
     setLoading(true);
     setError("");
@@ -562,6 +738,7 @@ export function ReputationLookup() {
       const policyBody = await policyPromise;
       setPolicyEvaluation(policyBody);
       setResult(body);
+      void refreshCrossChainContext(body.wallet);
 
       const networkBreakdown =
         source === "arc_network"
@@ -782,11 +959,22 @@ export function ReputationLookup() {
                   }`
                 ],
                 ["Policy Decision", policyEvaluation?.decision ?? "Run policy"],
-                ["Analysis Confidence", result.scores?.confidenceLevel ?? result.confidenceLevel],
-                [
-                  "Estimated Identity",
-                  getIdentityEstimationSummary(identityEstimation)
-                ],
+                ["Analysis Confidence", result.scores?.confidenceLevel ?? result.confidenceLevel]
+              ].map(([label, value]) => (
+                <MetricCard key={String(label)} label={String(label)} value={value} />
+              ))}
+              <div className="rounded-lg border border-arc-border bg-black/20 p-3">
+                <dt className="text-xs uppercase tracking-normal text-slate-500">Estimated Identity</dt>
+                <dd className="mt-2 text-lg font-semibold text-white">
+                  {getIdentityEstimationSummary(identityEstimation)}
+                </dd>
+                <p className="mt-2 text-xs leading-5 text-slate-500">
+                  Behavior estimate based on observable signals.
+                  <br />
+                  Not identity verification.
+                </p>
+              </div>
+              {[
                 ["Signature Status", getTrustSnapshotSignatureStatusLabel(result.trustSnapshot?.signatureStatus)],
                 [
                   "Latest Attestation Status",
@@ -1050,6 +1238,102 @@ export function ReputationLookup() {
               </div>
             </div>
 
+            <div className="mt-4 rounded-lg border border-arc-border bg-black/20 p-4">
+              <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+                <div>
+                  <p className="text-sm font-semibold text-white">Cross-Chain Context</p>
+                  <p className="mt-1 text-xs leading-5 text-slate-500">
+                    Optional Ethereum, Base and BNB Chain evidence. When KX and Arc data are unavailable,
+                    KX uses real cross-chain context for a conservative baseline Trust/Risk assessment.
+                  </p>
+                </div>
+                <span className="rounded-full border border-slate-500/40 px-2 py-1 text-xs text-slate-300">
+                  {refreshingCrossChain
+                    ? "Refreshing"
+                    : result.crossChainContext?.cacheSource ?? "No cache"}
+                </span>
+              </div>
+
+              <dl className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
+                {[
+                  [
+                    "Networks analyzed",
+                    result.crossChainContext?.summary.networksAnalyzed ?? 0
+                  ],
+                  [
+                    "Wallet age",
+                    result.crossChainContext?.summary.earliestActivity
+                      ? `${Math.max(
+                          0,
+                          Math.floor(
+                            (Date.now() -
+                              new Date(result.crossChainContext.summary.earliestActivity).getTime()) /
+                              86_400_000
+                          )
+                        )} days`
+                      : "Unavailable"
+                  ],
+                  [
+                    "Transactions",
+                    result.crossChainContext?.summary.transactionCount ?? "Unavailable"
+                  ],
+                  [
+                    "Active days",
+                    result.crossChainContext?.summary.activeDays ?? "Unavailable"
+                  ],
+                  [
+                    "Contract interactions",
+                    result.crossChainContext?.summary.contractInteractionCount ?? "Unavailable"
+                  ],
+                  [
+                    "Coverage",
+                    result.crossChainContext?.summary.coverage ?? "Unavailable"
+                  ]
+                ].map(([label, value]) => (
+                  <MetricCard key={String(label)} label={String(label)} value={value} />
+                ))}
+              </dl>
+
+              <div className="mt-4 grid gap-2 lg:grid-cols-3">
+                {(result.crossChainContext?.networks ?? []).map((network) => (
+                  <div key={network.network} className="rounded-lg border border-arc-border bg-white/[0.03] p-3">
+                    <div className="flex items-center justify-between gap-3">
+                      <p className="text-sm font-semibold text-white">{network.label}</p>
+                      <span className="rounded-full border border-slate-500/40 px-2 py-1 text-[11px] text-slate-300">
+                        {getCrossChainStatusLabel(network)}
+                      </span>
+                    </div>
+                    <dl className="mt-3 grid gap-1 text-xs">
+                      {[
+                        ["Transactions", network.transactionCount ?? "Unavailable"],
+                        ["Active days", network.activeDays ?? "Unavailable"],
+                        ["Contract calls", network.contractInteractionCount ?? "Unavailable"],
+                        ["Last activity", formatDate(network.lastActivity)],
+                        ["Indexed", formatDate(network.indexedAt)]
+                      ].map(([label, value]) => (
+                        <div key={String(label)} className="flex justify-between gap-3">
+                          <dt className="text-slate-500">{label}</dt>
+                          <dd className="text-slate-300">{value}</dd>
+                        </div>
+                      ))}
+                    </dl>
+                    {network.status !== "available" ? (
+                      <p className="mt-2 text-xs leading-5 text-slate-500">
+                        This network will be expanded as indexed support becomes available.
+                      </p>
+                    ) : null}
+                  </div>
+                ))}
+              </div>
+
+              {!result.crossChainContext ? (
+                <p className="mt-3 rounded-lg border border-sky-300/20 bg-sky-300/10 p-3 text-xs leading-5 text-sky-100">
+                  No cached cross-chain context yet. KX refreshes this after Trust analysis when
+                  indexed explorer providers are configured.
+                </p>
+              ) : null}
+            </div>
+
             {(result.arcReputation || result.arcValidations) ? (
               <div className="mt-4 grid gap-4 lg:grid-cols-2">
                 <ArcRegistryPanel signal={result.arcReputation} />
@@ -1062,20 +1346,23 @@ export function ReputationLookup() {
             <p className="text-sm font-semibold text-white">Detailed Breakdown</p>
             <DetailSection title="Behavioral signals">
               <div className="grid gap-2 lg:grid-cols-2">
-                {getVisibleBehavioralSignals(result).map((signal) => (
-                  <div
-                    key={signal.label}
-                    className="rounded-lg border border-arc-border bg-black/20 p-3"
-                  >
-                    <div className="flex items-center justify-between gap-3">
-                      <p className="font-medium text-white">{signal.label}</p>
-                      <span className={`text-xs font-semibold ${getStatusAccent(signal.status)}`}>
-                        {signal.status}
-                      </span>
+                {getVisibleBehavioralSignals(result).map((signal) => {
+                  const strength = getBehavioralSignalStrength(signal);
+                  return (
+                    <div
+                      key={signal.label}
+                      className="rounded-lg border border-arc-border bg-black/20 p-3"
+                    >
+                      <div className="flex items-center justify-between gap-3">
+                        <p className="font-medium text-white">{signal.label}</p>
+                        <span className={`text-xs font-semibold ${getEvidenceStrengthAccent(strength)}`}>
+                          {strength}
+                        </span>
+                      </div>
+                      <p className="mt-1 text-slate-400">{signal.value}</p>
                     </div>
-                    <p className="mt-1 text-slate-400">{signal.value}</p>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             </DetailSection>
 
@@ -1104,20 +1391,23 @@ export function ReputationLookup() {
             >
               {showIdentityEstimation && identityEstimation ? (
                 <div className="grid gap-2 lg:grid-cols-2">
-                  {identityEstimation.signals.map((signal) => (
-                    <div
-                      key={signal.label}
-                      className="rounded-lg border border-arc-border bg-black/20 p-3"
-                    >
-                      <div className="flex items-center justify-between gap-3">
-                        <p className="text-sm font-semibold text-white">{signal.label}</p>
-                        <span className="rounded-full border border-slate-500/40 px-2 py-1 text-xs text-slate-300">
-                          {signal.result}
-                        </span>
+                  {identityEstimation.signals.map((signal) => {
+                    const signalLabel = getIdentitySignalDisplayLabel(signal);
+                    return (
+                      <div
+                        key={signal.label}
+                        className="rounded-lg border border-arc-border bg-black/20 p-3"
+                      >
+                        <div className="flex items-center justify-between gap-3">
+                          <p className="text-sm font-semibold text-white">{signal.label}</p>
+                          <span className={`rounded-full border px-2 py-1 text-xs ${getIdentitySignalAccent(signalLabel)}`}>
+                            {signalLabel}
+                          </span>
+                        </div>
+                        <p className="mt-2 text-xs leading-5 text-slate-500">{signal.explanation}</p>
                       </div>
-                      <p className="mt-2 text-xs leading-5 text-slate-500">{signal.explanation}</p>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
               ) : (
                 <p className="rounded-lg border border-slate-500/30 bg-black/20 p-3 text-sm text-slate-400">

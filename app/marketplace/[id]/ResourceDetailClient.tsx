@@ -8,6 +8,7 @@ import { PageHeader } from "@/components/PageHeader";
 import { PageShell } from "@/components/PageShell";
 import { RatingSummaryText, StarDisplay, StarInput } from "@/components/StarRating";
 import { TransactionStatus, type TransactionState } from "@/components/TransactionStatus";
+import { TrustBadge } from "@/components/TrustBadge";
 import { TrustCheckButton } from "@/components/TrustCheckButton";
 import { useUsdc } from "@/hooks/useUsdc";
 import { useWallet } from "@/hooks/useWallet";
@@ -415,6 +416,9 @@ export function ResourceDetailClient({ initialResource, resourceId }: ResourceDe
                 >
                   {shortenAddress(resource.sellerAddress)}
                 </a>
+                <span className="mt-2 block">
+                  <TrustBadge wallet={resource.sellerAddress} />
+                </span>
               </dd>
             </div>
             <div>

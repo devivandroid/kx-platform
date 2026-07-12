@@ -8,6 +8,7 @@ import { PageHeader } from "@/components/PageHeader";
 import { PageShell } from "@/components/PageShell";
 import { TaskStatusBadge } from "@/components/TaskStatusBadge";
 import { TransactionStatus, type TransactionState } from "@/components/TransactionStatus";
+import { TrustBadge } from "@/components/TrustBadge";
 import { TrustCheckButton } from "@/components/TrustCheckButton";
 import {
   isEscrowConfigured,
@@ -313,6 +314,9 @@ export function TaskDetailsClient({ taskId }: TaskDetailsClientProps) {
                   >
                     {shortenAddress(task.client)}
                   </a>
+                  <span className="mt-2 block">
+                    <TrustBadge wallet={task.client} />
+                  </span>
                 </dd>
               </div>
               <div>
@@ -643,9 +647,14 @@ export function TaskDetailsClient({ taskId }: TaskDetailsClientProps) {
                           key={applicant}
                           className="flex flex-col gap-3 rounded-lg border border-arc-border bg-black/20 p-3 sm:flex-row sm:items-center sm:justify-between"
                         >
-                          <p className="text-sm font-medium text-white">
-                            {shortenAddress(applicant)}
-                          </p>
+                          <div>
+                            <p className="text-sm font-medium text-white">
+                              {shortenAddress(applicant)}
+                            </p>
+                            <div className="mt-2">
+                              <TrustBadge wallet={applicant} />
+                            </div>
+                          </div>
                           <div className="flex flex-wrap gap-2">
                             <TrustCheckButton
                               wallet={applicant}
@@ -722,6 +731,9 @@ export function TaskDetailsClient({ taskId }: TaskDetailsClientProps) {
                   wallet={task.client}
                   className="mt-4 inline-flex w-full items-center justify-center gap-2 rounded-lg border border-arc-border bg-white/5 px-4 py-3 text-sm font-semibold text-white hover:border-arc-blue disabled:cursor-not-allowed disabled:opacity-60"
                 />
+                <div className="mt-3">
+                  <TrustBadge wallet={task.client} />
+                </div>
                 <button
                   type="button"
                   onClick={handleApply}

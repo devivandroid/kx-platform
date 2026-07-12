@@ -17,6 +17,8 @@ import type {
   AgentCapabilitiesResponse,
   CreateRequestInput,
   CreateRequestResponse,
+  EvaluateInteractionInput,
+  EvaluateInteractionResponse,
   KXClientOptions,
   PaymentProof,
   PaymentRequiredResponse,
@@ -114,6 +116,12 @@ export class KXClient {
         useIndexedData: options.useIndexedData
       })
     );
+  }
+
+  evaluateInteraction(
+    input: EvaluateInteractionInput
+  ): Promise<EvaluateInteractionResponse> {
+    return this.post("/api/trust/evaluate-transaction", input);
   }
 
   searchResources(params?: SearchResourcesParams): Promise<SearchResourcesResponse> {

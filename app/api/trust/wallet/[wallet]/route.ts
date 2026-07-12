@@ -6,6 +6,7 @@ import {
   getRiskProfileAsync
 } from "@/lib/server/risk-intelligence/riskService";
 import type { RiskProfile } from "@/lib/server/risk-intelligence/types";
+import { refreshCrossChainContextIfStale } from "@/lib/server/risk-intelligence/crossChainContext";
 import {
   evaluateTrustPolicyForProfile,
   normalizeTrustPolicyId
@@ -59,6 +60,7 @@ export async function GET(request: Request, context: TrustWalletContext) {
   const source = readSource(request);
   const policyId = normalizeTrustPolicyId(searchParams.get("policyId"));
   const profile = await getProfile(wallet, source, readUseIndexedData(request));
+  void refreshCrossChainContextIfStale(wallet).catch(() => undefined);
   const policy = evaluateTrustPolicyForProfile({ wallet, policyId }, profile, policyId);
   const snapshot = profile.trustSnapshot;
 

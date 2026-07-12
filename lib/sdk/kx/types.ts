@@ -289,3 +289,39 @@ export type TrustWalletResponse = {
   attestationStatus: string;
   lastUpdated: string | null;
 };
+
+export type EvaluateInteractionInput = {
+  from: string;
+  to: string;
+  amount?: string;
+  asset?: string;
+  context?: "marketplace" | "job" | "payment" | "custom" | string;
+  policy?: TrustPolicyId;
+};
+
+export type InteractionTrustSummary = {
+  wallet: string;
+  decision: "ALLOW" | "REVIEW" | "BLOCK" | "UNKNOWN";
+  trustScore: number | null;
+  riskScore: number | null;
+  riskTier: "Low" | "Medium" | "High" | "Unknown" | string;
+  estimatedIdentity: string | null;
+  humanProbability: number | null;
+  updatedAt: string | null;
+  source: "latest_snapshot" | "trust_engine";
+};
+
+export type EvaluateInteractionResponse = {
+  allow: boolean;
+  decision: "ALLOW" | "REVIEW" | "BLOCK";
+  fromTrust: InteractionTrustSummary;
+  toTrust: InteractionTrustSummary;
+  riskTier: "Low" | "Medium" | "High";
+  reasons: string[];
+  recommendation: "Proceed" | "Review before continuing" | "Do not proceed";
+  policy: TrustPolicyId;
+  policyName: string;
+  amount: string | null;
+  asset: string;
+  context: string;
+};

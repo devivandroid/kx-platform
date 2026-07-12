@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { RatingSummaryText, StarDisplay } from "@/components/StarRating";
+import { TrustBadge } from "@/components/TrustBadge";
 import { TrustCheckButton } from "@/components/TrustCheckButton";
 import { useWallet } from "@/hooks/useWallet";
 import {
@@ -108,6 +109,9 @@ export function ResourceCard({ resource }: ResourceCardProps) {
         <p>
           Creator: {resource.participantName ?? resource.sellerName ?? "Independent Creator"} ·{" "}
           {getUserTypeLabel(resource.userType)} / {getEntityTypeLabel(resource.entityType)}
+        </p>
+        <p>
+          <TrustBadge wallet={resource.sellerAddress} />
         </p>
         <p>Tags: {resource.tags.join(", ")}</p>
       </div>

@@ -7,8 +7,46 @@ type CodeSnippetProps = {
   language?: string;
 };
 
+function getTokenClass(token: string) {
+  if (["const", "await", "if", "return"].includes(token)) return "text-[#ffb86c]";
+  if (["client", "continueTransaction", "buyer", "seller", "wallet"].includes(token)) {
+    return "text-[#8be9fd]";
+  }
+  if (["trust", "evaluateInteraction", "allow"].includes(token)) return "text-[#50fa7b]";
+  if (/^"[^"]*"$/.test(token)) return "text-[#f1fa8c]";
+  if (/^[{}()[\],.:;=]$/.test(token)) return "text-[#ff79c6]";
+  return "text-[#f8f8f2]";
+}
+
+function renderHighlightedLine(line: string, index: number) {
+  const leadingWhitespace = line.match(/^\s*/)?.[0] ?? "";
+  const content = line.slice(leadingWhitespace.length);
+  const tokens = content.match(/"[^"]*"|[A-Za-z_$][\w$]*|[{}()[\],.:;=]/g) ?? [];
+  let cursor = 0;
+
+  return (
+    <span key={`${line}-${index}`}>
+      {leadingWhitespace}
+      {tokens.map((token, tokenIndex) => {
+        const start = content.indexOf(token, cursor);
+        const gap = content.slice(cursor, start);
+        cursor = start + token.length;
+
+        return (
+          <span key={`${token}-${tokenIndex}`}>
+            {gap}
+            <span className={getTokenClass(token)}>{token}</span>
+          </span>
+        );
+      })}
+      {content.slice(cursor)}
+    </span>
+  );
+}
+
 export function CodeSnippet({ code, language = "TypeScript" }: CodeSnippetProps) {
   const [copied, setCopied] = useState(false);
+  const lines = code.split("\n");
 
   const handleCopy = async () => {
     await navigator.clipboard.writeText(code);
@@ -68,29 +106,12 @@ export function CodeSnippet({ code, language = "TypeScript" }: CodeSnippetProps)
       </div>
       <pre className="overflow-x-auto px-5 py-4 text-[13px] leading-7 text-white">
         <code>
-          <span className="text-[#ffb86c]">const</span>{" "}
-          <span className="text-[#f8f8f2]">trust</span>{" "}
-          <span className="text-[#ff79c6]">=</span>{" "}
-          <span className="text-[#ffb86c]">await</span>{" "}
-          <span className="text-[#8be9fd]">client</span>
-          <span className="text-[#f8f8f2]">.</span>
-          <span className="text-[#50fa7b]">trust</span>
-          <span className="text-[#f8f8f2]">(</span>
-          <span className="text-[#bd93f9]">wallet</span>
-          <span className="text-[#f8f8f2]">);</span>
-          <br />
-          <br />
-          <span className="text-[#ff79c6]">if</span>{" "}
-          <span className="text-[#f8f8f2]">(</span>
-          <span className="text-[#f8f8f2]">trust</span>
-          <span className="text-[#f8f8f2]">.</span>
-          <span className="text-[#50fa7b]">allow</span>
-          <span className="text-[#f8f8f2]">) {"{"}</span>
-          <br />
-          <span className="pl-6 text-[#8be9fd]">continueTransaction</span>
-          <span className="text-[#f8f8f2]">();</span>
-          <br />
-          <span className="text-[#f8f8f2]">{"}"}</span>
+          {lines.map((line, index) => (
+            <span key={`${line}-${index}`}>
+              {renderHighlightedLine(line, index)}
+              {index < lines.length - 1 ? <br /> : null}
+            </span>
+          ))}
         </code>
       </pre>
     </div>

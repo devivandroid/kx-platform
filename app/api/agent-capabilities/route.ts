@@ -95,6 +95,8 @@ export async function GET() {
       service: "KX Public Risk Intelligence Service",
       profileEndpoint: "/api/risk/profile/{wallet}",
       networkProfileEndpoint: "/api/risk/network/{wallet}",
+      crossChainContextEndpoint: "/api/risk/cross-chain/{wallet}",
+      crossChainProviderHealthEndpoint: "/api/risk/cross-chain/health",
       combinedProfileEndpoint: "/api/risk/profile/{wallet}?source=combined",
       summaryEndpoint: "/api/risk/summary/{wallet}",
       signalsEndpoint: "/api/risk/signals/{wallet}",
@@ -122,7 +124,7 @@ export async function GET() {
         "No authentication yet",
         "No production-grade compliance screening"
       ],
-      dataSources: ["knowledge_exchange", "arc_network", "combined", "no_data"]
+      dataSources: ["knowledge_exchange", "arc_network", "cross_chain_context", "combined", "no_data"]
     },
     sdk: {
       name: "KX TypeScript SDK",

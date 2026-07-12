@@ -6,6 +6,7 @@ import {
   getRiskProfileAsync,
   toPublicRiskProfileResponse
 } from "@/lib/server/risk-intelligence/riskService";
+import { refreshCrossChainContextIfStale } from "@/lib/server/risk-intelligence/crossChainContext";
 
 type RiskWalletContext = {
   params: Promise<{ wallet: string }>;
@@ -39,12 +40,18 @@ export async function GET(request: Request, context: RiskWalletContext) {
   }
 
   if (source === "internal" || source === "knowledge_exchange") {
-    return NextResponse.json(toPublicRiskProfileResponse(await getRiskProfileAsync(wallet, options)));
+    const profile = await getRiskProfileAsync(wallet, options);
+    void refreshCrossChainContextIfStale(wallet).catch(() => undefined);
+    return NextResponse.json(toPublicRiskProfileResponse(profile));
   }
 
   if (source === "arc_network") {
-    return NextResponse.json(toPublicRiskProfileResponse(await getArcNetworkRiskProfileAsync(wallet, options)));
+    const profile = await getArcNetworkRiskProfileAsync(wallet, options);
+    void refreshCrossChainContextIfStale(wallet).catch(() => undefined);
+    return NextResponse.json(toPublicRiskProfileResponse(profile));
   }
 
-  return NextResponse.json(toPublicRiskProfileResponse(await getCombinedRiskProfileAsync(wallet, options)));
+  const profile = await getCombinedRiskProfileAsync(wallet, options);
+  void refreshCrossChainContextIfStale(wallet).catch(() => undefined);
+  return NextResponse.json(toPublicRiskProfileResponse(profile));
 }

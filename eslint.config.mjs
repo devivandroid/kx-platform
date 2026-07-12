@@ -14,6 +14,8 @@ const eslintConfig = [
     ignores: [
       ".next/**",
       ".next-local/**",
+      ".circle-app-kit-inspect/**",
+      ".npm-cache/**",
       "artifacts/**",
       "cache/**",
       "node_modules/**",

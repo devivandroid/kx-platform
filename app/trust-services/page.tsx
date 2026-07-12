@@ -1,4 +1,4 @@
-import { CodeSnippet } from "@/components/CodeSnippet";
+﻿import { CodeSnippet } from "@/components/CodeSnippet";
 import { PageHeader } from "@/components/PageHeader";
 import { PageShell } from "@/components/PageShell";
 
@@ -10,6 +10,22 @@ const services = [
     endpoint: "GET /api/trust/wallet/:wallet",
     sdk: "client.trust(wallet)",
     useCase: "Add a trust check to an Arc dApp or agent workflow in a few minutes."
+  },
+  {
+    name: "Evaluate Interaction API",
+    description:
+      "Builder-facing transaction check for a pair of wallets before marketplace, Job or payment settlement.",
+    endpoint: "POST /api/trust/evaluate-transaction",
+    sdk: "client.evaluateInteraction({ from, to, amount, asset, context })",
+    useCase: "Decide whether a buyer-to-creator or requester-to-provider interaction should proceed."
+  },
+  {
+    name: "Protected Transactions",
+    description:
+      "KX trust gates for Protected Send, Protected Bridge and server-side Protected Swap with Circle App Kit.",
+    endpoint: "GET /protected-transactions",
+    sdk: "client.trust(recipient)",
+    useCase: "Check wallet trust before App Kit moves USDC on testnet flows."
   },
   {
     name: "Trust Score API",
@@ -75,6 +91,18 @@ if (trust.allow) {
   continueTransaction();
 }`;
 
+const transactionSnippet = `const evaluation = await client.evaluateInteraction({
+  from: buyer,
+  to: seller,
+  amount: "25.00",
+  asset: "USDC",
+  context: "marketplace"
+});
+
+if (evaluation.allow) {
+  continueTransaction();
+}`;
+
 export default function TrustServicesPage() {
   return (
     <PageShell>
@@ -99,6 +127,16 @@ export default function TrustServicesPage() {
             </p>
           </div>
           <CodeSnippet code={trustSnippet} />
+        </div>
+        <div className="mt-4 grid gap-4 lg:grid-cols-[1fr_1fr] lg:items-start">
+          <div>
+            <h2 className="text-lg font-semibold text-white">Evaluate an interaction</h2>
+            <p className="mt-2 text-sm leading-6 text-slate-400">
+              Use the interaction evaluator when an app needs to check both sides of an interaction
+              before handing settlement to Arc.
+            </p>
+          </div>
+          <CodeSnippet code={transactionSnippet} />
         </div>
         <p className="mt-3 rounded-lg border border-amber-300/30 bg-amber-300/10 p-3 text-sm leading-6 text-amber-100">
           This is not KYC, AML, compliance screening or identity verification. Trust Attestation

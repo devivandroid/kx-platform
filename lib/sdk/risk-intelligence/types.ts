@@ -98,7 +98,7 @@ export type RiskSdkIdentityEstimation = {
   probability: number;
   confidence: ConfidenceLevel;
   publicationEligibilityReason?: string;
-  evidenceSource: "Arc Network";
+  evidenceSource: "Arc Network" | "Cross-Chain Context" | "Arc Network + Cross-Chain Context";
   kxDeclaredUserType?: "HUMAN" | "AGENT" | "unknown";
   arcDeclaredIdentity?: string | null;
   arcDeclaredUserType?: "HUMAN" | "AGENT" | "unknown";
@@ -108,7 +108,13 @@ export type RiskSdkIdentityEstimation = {
   lastEstimatedAt?: string;
   signals: Array<{
     label: string;
-    result: "Human" | "Agent-like" | "Unknown";
+    result:
+      | "Human"
+      | "Agent-like"
+      | "Positive signal"
+      | "Weak positive signal"
+      | "Limited evidence"
+      | "Unknown";
     explanation: string;
   }>;
   limitations: string[];

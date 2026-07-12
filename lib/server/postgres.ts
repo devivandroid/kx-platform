@@ -158,6 +158,13 @@ export async function ensurePostgresSchema(): Promise<void> {
           published_at TIMESTAMPTZ
         );
 
+        CREATE TABLE IF NOT EXISTS cross_chain_context (
+          wallet_address TEXT PRIMARY KEY,
+          data JSONB NOT NULL,
+          refreshed_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+          expires_at TIMESTAMPTZ NOT NULL
+        );
+
         CREATE INDEX IF NOT EXISTS resources_created_at_idx ON resources (created_at DESC);
         CREATE INDEX IF NOT EXISTS requests_created_at_idx ON requests (created_at DESC);
         CREATE INDEX IF NOT EXISTS risk_events_wallet_idx ON risk_events (LOWER(wallet_address));
@@ -172,6 +179,11 @@ export async function ensurePostgresSchema(): Promise<void> {
         CREATE INDEX IF NOT EXISTS wallet_transaction_samples_wallet_lower_idx ON wallet_transaction_samples (LOWER(wallet_address));
         CREATE INDEX IF NOT EXISTS trust_snapshots_wallet_created_idx ON trust_snapshots (LOWER(wallet_address), created_at DESC);
         CREATE INDEX IF NOT EXISTS trust_snapshots_report_hash_idx ON trust_snapshots (report_hash);
+        CREATE INDEX IF NOT EXISTS cross_chain_context_wallet_lower_idx ON cross_chain_context (LOWER(wallet_address));
+        CREATE INDEX IF NOT EXISTS cross_chain_context_expires_idx ON cross_chain_context (expires_at);
+        DELETE FROM cross_chain_context
+        WHERE data->>'schemaVersion' IS DISTINCT FROM 'kx.cross-chain-context.v2'
+           OR data::text ILIKE '%polygon%';
       `);
       await pool.query(`
         ALTER TABLE participants ADD COLUMN IF NOT EXISTS user_type TEXT;
@@ -189,6 +201,14 @@ export async function ensurePostgresSchema(): Promise<void> {
         ALTER TABLE trust_snapshots ADD COLUMN IF NOT EXISTS signing_algorithm TEXT;
         ALTER TABLE trust_snapshots ADD COLUMN IF NOT EXISTS signed_at TIMESTAMPTZ;
         CREATE INDEX IF NOT EXISTS requests_arc_job_id_idx ON requests (arc_job_id);
+        CREATE TABLE IF NOT EXISTS cross_chain_context (
+          wallet_address TEXT PRIMARY KEY,
+          data JSONB NOT NULL,
+          refreshed_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+          expires_at TIMESTAMPTZ NOT NULL
+        );
+        CREATE INDEX IF NOT EXISTS cross_chain_context_wallet_lower_idx ON cross_chain_context (LOWER(wallet_address));
+        CREATE INDEX IF NOT EXISTS cross_chain_context_expires_idx ON cross_chain_context (expires_at);
       `);
     })();
   }

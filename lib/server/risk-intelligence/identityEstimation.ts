@@ -493,16 +493,16 @@ function buildSignals(
   return [
     snapshot.isContractAccount === undefined
       ? signal(
-          "Account Type",
+          "EOA detected",
           "Unknown",
           "Arc RPC account code was not available for this estimate."
         )
       : signal(
-          "Account Type",
+          snapshot.isContractAccount ? "Account Type" : "EOA detected",
           snapshot.isContractAccount ? "Agent-like" : "Human",
           snapshot.isContractAccount
             ? "Arc RPC returned account code for this wallet."
-            : "Arc RPC returned no account code for this wallet."
+            : "No smart contract code detected. This is one signal only and does not prove the wallet belongs to a human."
         ),
     getCircadianSignal(currentSample),
     signal(
@@ -617,7 +617,7 @@ export async function estimateWalletIdentityFromArcNetwork(
     totalSignals: scoredSignals.length,
     knownSignals,
     timestampedTxCount,
-    accountTypeKnown: signals.find((item) => item.label === "Account Type")?.result !== "Unknown",
+    accountTypeKnown: signals.find((item) => item.label === "Account Type" || item.label === "EOA detected")?.result !== "Unknown",
     strongSignalCount: strongHumanSignals + strongAgentSignals
   });
   const estimation: IdentityEstimation = {

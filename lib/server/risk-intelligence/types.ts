@@ -7,7 +7,7 @@ export type RiskSignalSeverity = "Info" | "Watch" | "Elevated";
 export type RiskGuardDecision = "allow" | "review" | "block";
 export type RiskProfileStatus = "active" | "limited" | "no_data";
 export type UnknownWalletBehavior = "allow" | "review" | "block";
-export type RiskDataSource = "knowledge_exchange" | "arc_network" | "combined" | "no_data";
+export type RiskDataSource = "knowledge_exchange" | "arc_network" | "cross_chain" | "combined" | "no_data";
 export type EstimatedUserType =
   | "Likely Human"
   | "Leaning Human"
@@ -15,7 +15,13 @@ export type EstimatedUserType =
   | "Leaning Agent"
   | "Mixed / Inconclusive"
   | "Unknown";
-export type IdentitySignalResult = "Human" | "Agent-like" | "Unknown";
+export type IdentitySignalResult =
+  | "Human"
+  | "Agent-like"
+  | "Positive signal"
+  | "Weak positive signal"
+  | "Limited evidence"
+  | "Unknown";
 export type IdentityMatchStatus = "OK" | "Mismatch" | "Not available";
 export type ArcRegistryStatus =
   | "found"
@@ -25,6 +31,54 @@ export type ArcRegistryStatus =
   | "not_found"
   | "unavailable";
 export type TrustAttestationStatus = "not_published" | "eligible" | "published" | "skipped";
+
+export type CrossChainNetworkId = "ethereum" | "base" | "bnb";
+
+export type CrossChainNetworkContext = {
+  schemaVersion?: string;
+  network: CrossChainNetworkId;
+  label: string;
+  status: "available" | "not_configured" | "unavailable";
+  walletAgeDays: number | null;
+  transactionCount: number | null;
+  outboundTransactionCount?: number | null;
+  activeDays: number | null;
+  contractInteractionCount: number | null;
+  firstActivity: string | null;
+  lastActivity: string | null;
+  source: string | null;
+  indexedAt: string | null;
+  coverage: "full" | "limited" | "unavailable";
+  providerErrors?: string[];
+  blockRange?: {
+    fromBlock: number;
+    toBlock: number;
+    blocksAnalyzed: number;
+  };
+  message?: string;
+};
+
+export type CrossChainContext = {
+  schemaVersion?: string;
+  wallet: string;
+  status: "available" | "partial" | "not_configured" | "unavailable";
+  cacheSource: "postgres_cache" | "fresh" | "none";
+  refreshedAt: string | null;
+  expiresAt: string | null;
+  networks: CrossChainNetworkContext[];
+  summary: {
+    networksAnalyzed: number;
+    transactionCount: number | null;
+    outboundTransactionCount?: number | null;
+    activeDays: number | null;
+    contractInteractionCount: number | null;
+    earliestActivity: string | null;
+    lastActivity: string | null;
+    coverage: "full" | "limited" | "unavailable";
+  };
+  confidenceBoost: ConfidenceLevel | null;
+  limitations: string[];
+};
 
 export type TrustSnapshot = {
   id: string;
@@ -163,7 +217,7 @@ export interface RiskProfile {
     estimatedUserType: EstimatedUserType;
     probability: number;
     confidence: ConfidenceLevel;
-    evidenceSource: "Arc Network";
+    evidenceSource: "Arc Network" | "Cross-Chain Context" | "Arc Network + Cross-Chain Context";
     kxDeclaredUserType?: "HUMAN" | "AGENT" | "unknown";
     arcDeclaredIdentity?: string | null;
     arcDeclaredUserType?: "HUMAN" | "AGENT" | "unknown";
@@ -179,6 +233,7 @@ export interface RiskProfile {
     limitations: string[];
   };
   trustSnapshot?: TrustSnapshot;
+  crossChainContext?: CrossChainContext;
   arcReputation?: ArcRegistrySignal;
   arcValidations?: ArcRegistrySignal;
   behavioralSignals: Array<{
