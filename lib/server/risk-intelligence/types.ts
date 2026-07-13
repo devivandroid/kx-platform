@@ -46,6 +46,7 @@ export type CrossChainNetworkContext = {
   contractInteractionCount: number | null;
   firstActivity: string | null;
   lastActivity: string | null;
+  timestampSample?: string[];
   source: string | null;
   indexedAt: string | null;
   coverage: "full" | "limited" | "unavailable";

@@ -182,7 +182,7 @@ export async function ensurePostgresSchema(): Promise<void> {
         CREATE INDEX IF NOT EXISTS cross_chain_context_wallet_lower_idx ON cross_chain_context (LOWER(wallet_address));
         CREATE INDEX IF NOT EXISTS cross_chain_context_expires_idx ON cross_chain_context (expires_at);
         DELETE FROM cross_chain_context
-        WHERE data->>'schemaVersion' IS DISTINCT FROM 'kx.cross-chain-context.v2'
+        WHERE data->>'schemaVersion' IS DISTINCT FROM 'kx.cross-chain-context.v3'
            OR data::text ILIKE '%polygon%';
       `);
       await pool.query(`

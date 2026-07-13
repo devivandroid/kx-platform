@@ -196,7 +196,7 @@ function buildCrossChainBaselineProfile(profile: RiskProfile, crossChainContext:
   const financialBehaviorScore = Math.round(trustScore * 10);
   const behavioralSignals: RiskProfile["behavioralSignals"] = [
     {
-      label: "Established Ethereum history",
+      label: "Established wallet history",
       value: walletAgeDays !== undefined ? `${walletAgeDays} days` : "Unavailable",
       status: establishedHistory ? "Normal" : "Unknown",
       description: "External indexed history is used as supporting context only."
@@ -208,14 +208,14 @@ function buildCrossChainBaselineProfile(profile: RiskProfile, crossChainContext:
       description: "Activity breadth is not proof of trust, but improves evidence quality."
     },
     {
-      label: "Cross-chain transaction count",
+      label: "Historical wallet activity",
       value: txCount > 0 ? String(txCount) : "Unavailable",
       status: txCount > 0 ? "Normal" : "Unknown",
       description: "KX uses indexed transaction counts without token history, logs or internals."
     },
     {
       label: "Cross-chain coverage",
-      value: summary.coverage,
+      value: summary.coverage === "full" ? "High" : summary.coverage,
       status: summary.coverage === "full" ? "Normal" : "Watch",
       description: "Coverage is reported from the indexed provider and is not treated as KX or Arc activity."
     }
@@ -223,7 +223,7 @@ function buildCrossChainBaselineProfile(profile: RiskProfile, crossChainContext:
 
   const riskSignals: RiskProfile["riskSignals"] = [
     {
-      label: "Established Ethereum history lowers baseline risk",
+      label: "Established wallet history lowers baseline risk",
       severity: "Info",
       description: "Long-lived Ethereum activity provides external context, but does not prove commerce outcomes."
     },
@@ -277,7 +277,9 @@ function buildCrossChainBaselineProfile(profile: RiskProfile, crossChainContext:
       cacheSource: crossChainContext.cacheSource,
       coverage: {
         fullHistory: crossChainContext.summary.coverage === "full",
-        description: `External indexed context from supported networks. Coverage: ${crossChainContext.summary.coverage}.`
+        description: `External indexed context from supported networks. Coverage: ${
+          crossChainContext.summary.coverage === "full" ? "High" : crossChainContext.summary.coverage
+        }.`
       }
     },
     identityEstimation: buildCrossChainIdentityEstimation(profile, crossChainContext),
@@ -298,6 +300,183 @@ function identitySignal(
   explanation: string
 ): NonNullable<RiskProfile["identityEstimation"]>["signals"][number] {
   return { label, result, explanation };
+}
+
+function getCrossChainTimestampSample(context: CrossChainContext): string[] {
+  return context.networks
+    .filter((network) => network.status === "available")
+    .flatMap((network) => network.timestampSample ?? [])
+    .filter((value): value is string => Boolean(value))
+    .sort((a, b) => new Date(a).getTime() - new Date(b).getTime())
+    .slice(-50);
+}
+
+type CircadianRestWindow = {
+  offset: number;
+  startHour: number;
+  durationHours: number;
+  activeHours: number;
+  restShare: number;
+  restFreeDayShare: number;
+  continuousActivity: boolean;
+  repetitiveTiming: boolean;
+};
+
+function getLocalHour(timestamp: number, offset: number): number {
+  const hour = new Date(timestamp + offset * 3_600_000).getUTCHours();
+  return ((hour % 24) + 24) % 24;
+}
+
+function getLocalDay(timestamp: number, offset: number): string {
+  return new Date(timestamp + offset * 3_600_000).toISOString().slice(0, 10);
+}
+
+function isHourInWindow(hour: number, startHour: number, durationHours: number): boolean {
+  const endHour = (startHour + durationHours) % 24;
+  if (durationHours >= 24) return true;
+  if (startHour < endHour) return hour >= startHour && hour < endHour;
+  return hour >= startHour || hour < endHour;
+}
+
+function getIntervalsMinutes(timestamps: number[]): number[] {
+  const intervals: number[] = [];
+  for (let index = 1; index < timestamps.length; index += 1) {
+    intervals.push((timestamps[index] - timestamps[index - 1]) / 60_000);
+  }
+  return intervals.filter((value) => value > 0);
+}
+
+function coefficientOfVariation(values: number[]): number | null {
+  if (values.length < 2) return null;
+  const mean = values.reduce((sum, value) => sum + value, 0) / values.length;
+  if (mean === 0) return null;
+  const variance =
+    values.reduce((sum, value) => sum + (value - mean) ** 2, 0) / values.length;
+  return Math.sqrt(variance) / mean;
+}
+
+function inferRestWindow(timestamps: number[]): CircadianRestWindow | null {
+  if (timestamps.length < 8) return null;
+
+  const intervals = getIntervalsMinutes(timestamps);
+  const intervalCv = coefficientOfVariation(intervals);
+  const repetitiveTiming = intervalCv !== null && intervals.length >= 8 && intervalCv <= 0.45;
+  let bestWindow: CircadianRestWindow | null = null;
+  let bestScore = Number.POSITIVE_INFINITY;
+
+  for (let offset = -12; offset <= 14; offset += 1) {
+    const hours = timestamps.map((value) => getLocalHour(value, offset));
+    const activeHours = new Set(hours).size;
+    const days = new Map<string, { total: number; rest: number }>();
+    for (const timestamp of timestamps) {
+      const day = getLocalDay(timestamp, offset);
+      const entry = days.get(day) ?? { total: 0, rest: 0 };
+      entry.total += 1;
+      days.set(day, entry);
+    }
+
+    for (let durationHours = 6; durationHours <= 10; durationHours += 1) {
+      for (let startHour = 0; startHour < 24; startHour += 1) {
+        let restCount = 0;
+        const dayRestCounts = new Map(days);
+        for (const timestamp of timestamps) {
+          const localHour = getLocalHour(timestamp, offset);
+          if (!isHourInWindow(localHour, startHour, durationHours)) continue;
+          restCount += 1;
+          const day = getLocalDay(timestamp, offset);
+          const entry = dayRestCounts.get(day);
+          if (entry) entry.rest += 1;
+        }
+
+        const restShare = restCount / timestamps.length;
+        const daysObserved = dayRestCounts.size;
+        const restFreeDays = [...dayRestCounts.values()].filter((entry) => entry.rest === 0).length;
+        const restFreeDayShare = daysObserved > 0 ? restFreeDays / daysObserved : 0;
+        const continuousActivity = activeHours >= 20;
+        const score =
+          restShare * 2.4 +
+          (1 - restFreeDayShare) * 0.7 +
+          (continuousActivity ? 0.3 : 0) -
+          (durationHours / 10) * 0.08;
+
+        if (score < bestScore) {
+          bestScore = score;
+          bestWindow = {
+            offset,
+            startHour,
+            durationHours,
+            activeHours,
+            restShare,
+            restFreeDayShare,
+            continuousActivity,
+            repetitiveTiming
+          };
+        }
+      }
+    }
+  }
+
+  return bestWindow;
+}
+
+function formatRestWindow(window: CircadianRestWindow): string {
+  const endHour = (window.startHour + window.durationHours) % 24;
+  const formatHour = (hour: number) => `${String(hour).padStart(2, "0")}:00`;
+  const offsetLabel = window.offset >= 0 ? `UTC+${window.offset}` : `UTC${window.offset}`;
+  return `${formatHour(window.startHour)}-${formatHour(endHour)} (${offsetLabel})`;
+}
+
+function getCrossChainCircadianSignal(
+  context: CrossChainContext
+): NonNullable<RiskProfile["identityEstimation"]>["signals"][number] {
+  const timestampSample = getCrossChainTimestampSample(context);
+  const timestamps = timestampSample
+    .map((value) => new Date(value).getTime())
+    .filter((value) => Number.isFinite(value))
+    .sort((a, b) => a - b);
+
+  if (timestamps.length < 8) {
+    return identitySignal(
+      "Circadian Activity Signal",
+      "Unknown",
+      "At least 8 timestamped transactions are needed for a basic circadian estimate."
+    );
+  }
+
+  const restWindow = inferRestWindow(timestamps);
+  if (!restWindow) {
+    return identitySignal(
+      "Circadian Activity Signal",
+      "Unknown",
+      "Insufficient cross-chain timing evidence to infer a recurring rest window."
+    );
+  }
+
+  const occasionalActivityThreshold = Math.max(0.08, Math.min(0.18, 2 / timestamps.length));
+  const frequentRestActivityThreshold = Math.max(0.2, occasionalActivityThreshold * 2);
+  const hasClearRestWindow =
+    restWindow.durationHours >= 6 &&
+    restWindow.restFreeDayShare >= 0.45 &&
+    restWindow.restShare <= 0.18;
+  const hasStrongAgentEvidence =
+    !hasClearRestWindow &&
+    (restWindow.continuousActivity ||
+      restWindow.restShare >= frequentRestActivityThreshold ||
+      (restWindow.repetitiveTiming && restWindow.activeHours >= 16));
+  const explanation =
+    `Inferred rest window ${formatRestWindow(restWindow)} from cross-chain timestamps; ` +
+    `${(restWindow.restShare * 100).toFixed(0)}% of activity falls inside it; ` +
+    `continuous 24/7 behavior ${restWindow.continuousActivity ? "detected" : "not detected"}.`;
+
+  if (hasStrongAgentEvidence) {
+    return identitySignal("Circadian Activity Signal", "Agent-like", explanation);
+  }
+
+  if (hasClearRestWindow && restWindow.restShare <= occasionalActivityThreshold) {
+    return identitySignal("Circadian Activity Signal", "Human", explanation);
+  }
+
+  return identitySignal("Circadian Activity Signal", "Unknown", explanation);
 }
 
 function getCrossChainCoverageSignalResult(
@@ -403,6 +582,8 @@ function buildCrossChainIdentityEstimation(
     );
   }
 
+  signals.push(getCrossChainCircadianSignal(crossChainContext));
+
   if (walletAgeDays === undefined) {
     signals.push(identitySignal("Wallet age", "Unknown", "Wallet age was not available from indexed context."));
   } else if (walletAgeDays < 7) {
@@ -490,7 +671,9 @@ function buildCrossChainIdentityEstimation(
     identitySignal(
       "Cross-chain coverage",
       getCrossChainCoverageSignalResult(summary.coverage),
-      `Coverage is ${summary.coverage} across ${summary.networksAnalyzed} analyzed network(s). Coverage improves evidence quality but does not prove identity.`
+      `Coverage is ${summary.coverage === "full" ? "High" : summary.coverage} across ${
+        summary.networksAnalyzed
+      } analyzed network(s). Coverage improves evidence quality but does not prove identity.`
     )
   );
 

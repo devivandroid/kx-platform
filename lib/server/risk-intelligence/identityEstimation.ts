@@ -310,8 +310,112 @@ function getActivityDays(timestamps: number[]): Map<string, number> {
   return days;
 }
 
-function getCircadianSignal(sample: ArcscanWalletTransactionSample[]) {
-  const timestamps = getSortedTimestamps(sample);
+type CircadianRestWindow = {
+  offset: number;
+  startHour: number;
+  durationHours: number;
+  activeHours: number;
+  restShare: number;
+  daysObserved: number;
+  restFreeDayShare: number;
+  continuousActivity: boolean;
+  repetitiveTiming: boolean;
+};
+
+function getLocalHour(timestamp: number, offset: number): number {
+  const hour = new Date(timestamp + offset * 3_600_000).getUTCHours();
+  return ((hour % 24) + 24) % 24;
+}
+
+function getLocalDay(timestamp: number, offset: number): string {
+  return new Date(timestamp + offset * 3_600_000).toISOString().slice(0, 10);
+}
+
+function isHourInWindow(hour: number, startHour: number, durationHours: number): boolean {
+  const endHour = (startHour + durationHours) % 24;
+  if (durationHours >= 24) return true;
+  if (startHour < endHour) return hour >= startHour && hour < endHour;
+  return hour >= startHour || hour < endHour;
+}
+
+function inferRestWindow(timestamps: number[]): CircadianRestWindow | null {
+  if (timestamps.length < 8) return null;
+
+  const intervals = getIntervalsMinutes(timestamps);
+  const intervalCv = coefficientOfVariation(intervals);
+  const repetitiveTiming = intervalCv !== null && intervals.length >= 8 && intervalCv <= 0.45;
+  let bestWindow: CircadianRestWindow | null = null;
+  let bestScore = Number.POSITIVE_INFINITY;
+
+  for (let offset = -12; offset <= 14; offset += 1) {
+    const hours = timestamps.map((value) => getLocalHour(value, offset));
+    const activeHours = new Set(hours).size;
+    const days = new Map<string, { total: number; rest: number }>();
+    for (const timestamp of timestamps) {
+      const day = getLocalDay(timestamp, offset);
+      const entry = days.get(day) ?? { total: 0, rest: 0 };
+      entry.total += 1;
+      days.set(day, entry);
+    }
+
+    for (let durationHours = 6; durationHours <= 10; durationHours += 1) {
+      for (let startHour = 0; startHour < 24; startHour += 1) {
+        let restCount = 0;
+        const dayRestCounts = new Map(days);
+        for (const timestamp of timestamps) {
+          const localHour = getLocalHour(timestamp, offset);
+          if (!isHourInWindow(localHour, startHour, durationHours)) continue;
+          restCount += 1;
+          const day = getLocalDay(timestamp, offset);
+          const entry = dayRestCounts.get(day);
+          if (entry) entry.rest += 1;
+        }
+
+        const restShare = restCount / timestamps.length;
+        const daysObserved = dayRestCounts.size;
+        const restFreeDays = [...dayRestCounts.values()].filter((entry) => entry.rest === 0).length;
+        const restFreeDayShare = daysObserved > 0 ? restFreeDays / daysObserved : 0;
+        const continuousActivity = activeHours >= 20;
+        const recurrencePenalty = 1 - restFreeDayShare;
+        const durationReward = durationHours / 10;
+        const score =
+          restShare * 2.4 +
+          recurrencePenalty * 0.7 +
+          (continuousActivity ? 0.3 : 0) -
+          durationReward * 0.08;
+
+        if (score < bestScore) {
+          bestScore = score;
+          bestWindow = {
+            offset,
+            startHour,
+            durationHours,
+            activeHours,
+            restShare,
+            daysObserved,
+            restFreeDayShare,
+            continuousActivity,
+            repetitiveTiming
+          };
+        }
+      }
+    }
+  }
+
+  return bestWindow;
+}
+
+function formatRestWindow(window: CircadianRestWindow): string {
+  const endHour = (window.startHour + window.durationHours) % 24;
+  const formatHour = (hour: number) => `${String(hour).padStart(2, "0")}:00`;
+  const offsetLabel = window.offset >= 0 ? `UTC+${window.offset}` : `UTC${window.offset}`;
+  return `${formatHour(window.startHour)}-${formatHour(endHour)} (${offsetLabel})`;
+}
+
+function getCircadianSignalFromTimestamps(
+  timestamps: number[],
+  sourceLabel = "transactions"
+) {
   if (timestamps.length < 8) {
     return signal(
       "Circadian Activity Signal",
@@ -320,24 +424,46 @@ function getCircadianSignal(sample: ArcscanWalletTransactionSample[]) {
     );
   }
 
-  const hours = timestamps.map((value) => new Date(value).getUTCHours());
-  const activeHours = new Set(hours).size;
-  const nightShare =
-    hours.filter((hour) => hour <= 5 || hour >= 23).length / Math.max(1, hours.length);
-
-  if (activeHours >= 12 || nightShare >= 0.35) {
+  const restWindow = inferRestWindow(timestamps);
+  if (!restWindow) {
     return signal(
       "Circadian Activity Signal",
-      "Agent-like",
-      `${activeHours} UTC hours represented; ${(nightShare * 100).toFixed(0)}% of activity is late-night UTC.`
+      "Unknown",
+      "Insufficient timing evidence to infer a recurring rest window."
     );
   }
 
-  return signal(
-    "Circadian Activity Signal",
-    "Human",
-    `${activeHours} UTC hours represented with limited late-night UTC activity.`
-  );
+  const occasionalActivityThreshold = Math.max(0.08, Math.min(0.18, 2 / timestamps.length));
+  const frequentRestActivityThreshold = Math.max(0.2, occasionalActivityThreshold * 2);
+  const hasClearRestWindow =
+    restWindow.durationHours >= 6 &&
+    restWindow.restFreeDayShare >= 0.45 &&
+    restWindow.restShare <= 0.18;
+  const hasStrongAgentEvidence =
+    !hasClearRestWindow &&
+    (restWindow.continuousActivity ||
+      restWindow.restShare >= frequentRestActivityThreshold ||
+      (restWindow.repetitiveTiming && restWindow.activeHours >= 16));
+
+  const explanation =
+    `Inferred rest window ${formatRestWindow(restWindow)} from ${sourceLabel}; ` +
+    `${(restWindow.restShare * 100).toFixed(0)}% of activity falls inside it; ` +
+    `continuous 24/7 behavior ${restWindow.continuousActivity ? "detected" : "not detected"}.`;
+
+  if (hasStrongAgentEvidence) {
+    return signal("Circadian Activity Signal", "Agent-like", explanation);
+  }
+
+  if (hasClearRestWindow && restWindow.restShare <= occasionalActivityThreshold) {
+    return signal("Circadian Activity Signal", "Human", explanation);
+  }
+
+  return signal("Circadian Activity Signal", "Unknown", explanation);
+}
+
+function getCircadianSignal(sample: ArcscanWalletTransactionSample[]) {
+  const timestamps = getSortedTimestamps(sample);
+  return getCircadianSignalFromTimestamps(timestamps);
 }
 
 function getTimingVarianceSignal(sample: ArcscanWalletTransactionSample[]) {

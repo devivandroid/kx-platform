@@ -590,7 +590,7 @@ function getBehavioralSignalStrength(signal: { label: string; value: string | nu
   const value = getFirstNumber(signal.value);
   const normalizedValue = String(signal.value).toLowerCase();
 
-  if (label === "Established Ethereum history") {
+  if (label === "Established wallet history") {
     if (value === null) return "Unknown";
     if (value > 1000) return "Strong";
     if (value >= 365) return "Positive";
@@ -602,7 +602,7 @@ function getBehavioralSignalStrength(signal: { label: string; value: string | nu
     if (value >= 15) return "Positive";
     return "Neutral";
   }
-  if (label === "Cross-chain transaction count") {
+  if (label === "Historical wallet activity") {
     if (value === null) return "Unknown";
     if (value > 100) return "Strong";
     if (value >= 25) return "Positive";
@@ -627,6 +627,23 @@ function getBehavioralSignalStrength(signal: { label: string; value: string | nu
   return "Unknown";
 }
 
+function getAssessmentSourceLabel(source: ReputationLookupResult["dataSource"] | undefined): string {
+  if (source === "knowledge_exchange") return "KX";
+  if (source === "arc_network") return "Arc Network";
+  if (source === "cross_chain") return "Cross-Chain Context";
+  if (source === "combined") return "KX + Arc Network";
+  if (source === "no_data") return "No data";
+  return "KX";
+}
+
+function formatCoverage(value: string | null | undefined): string {
+  if (!value) return "Unavailable";
+  if (value === "full") return "High";
+  if (value === "limited") return "Limited";
+  if (value === "unavailable") return "Unavailable";
+  return value;
+}
+
 function getEvidenceStrengthAccent(strength: string): string {
   if (strength === "Strong" || strength === "Positive") return "text-emerald-200";
   if (strength === "Watch") return "text-amber-200";
@@ -638,7 +655,15 @@ function getVisibleBehavioralSignals(result: ReputationLookupResult) {
   return (result.behavioralSignals ?? []).filter(
     (signal) =>
       signal.label !== "RPC account nonce" &&
-      signal.label !== "Arc Network: RPC account nonce"
+      signal.label !== "Arc Network: RPC account nonce" &&
+      signal.label !== "Network Coverage" &&
+      signal.label !== "Arc Network: Network Coverage"
+  );
+}
+
+function getVisibleIdentitySignals(result: ReputationLookupResult) {
+  return (result.identityEstimation?.signals ?? []).filter(
+    (signal) => signal.label !== "Network Coverage"
   );
 }
 
@@ -922,7 +947,7 @@ export function ReputationLookup() {
                 </p>
                 <p className="mt-1 break-all text-xs text-slate-500">{result.wallet}</p>
                 <p className="mt-1 text-xs uppercase tracking-normal text-slate-500">
-                  Data source: {result.dataSource ?? "knowledge_exchange"}
+                  Assessment source: {getAssessmentSourceLabel(result.dataSource)}
                 </p>
               </div>
               <span
@@ -1287,7 +1312,7 @@ export function ReputationLookup() {
                   ],
                   [
                     "Coverage",
-                    result.crossChainContext?.summary.coverage ?? "Unavailable"
+                    formatCoverage(result.crossChainContext?.summary.coverage)
                   ]
                 ].map(([label, value]) => (
                   <MetricCard key={String(label)} label={String(label)} value={value} />
@@ -1391,7 +1416,7 @@ export function ReputationLookup() {
             >
               {showIdentityEstimation && identityEstimation ? (
                 <div className="grid gap-2 lg:grid-cols-2">
-                  {identityEstimation.signals.map((signal) => {
+                  {getVisibleIdentitySignals(result).map((signal) => {
                     const signalLabel = getIdentitySignalDisplayLabel(signal);
                     return (
                       <div
@@ -1461,38 +1486,38 @@ export function ReputationLookup() {
             ) : null}
 
             <DetailSection title="Activity and API / SDK details">
-              <dl className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
-                {[
-                  ["Network transactions", result.activity?.successfulPayments ?? result.metrics.successfulPayments],
-                  ["Failed payments", result.activity?.failedPayments ?? 0],
-                  ["Products purchased", result.activity?.resourcesPurchased ?? result.metrics.resourcesPurchased],
-                  ["Products downloaded", result.activity?.resourcesDownloaded ?? result.metrics.resourcesDownloaded],
-                  ["Jobs created", result.activity?.requestsCreated ?? 0],
-                  [
-                    "Protected transactions funded",
-                    result.activity?.protectedTransactionsFunded ??
-                      result.metrics.protectedTransactionsFunded ??
-                      result.metrics.escrowsFunded
-                  ],
-                  ["Deliverables submitted", result.activity?.deliveriesSubmitted ?? 0],
-                  ["Funds released", result.activity?.fundsReleased ?? result.metrics.fundsReleased],
-                  ["Unique counterparties", result.activity?.uniqueCounterparties ?? 0],
-                  ["Average transaction", formatUSDC(result.activity?.averageTransactionAmountUSDC)],
-                  ["Average actions/day", result.activity?.averageActionsPerDay ?? "0.0"],
-                  ["Days since last activity", formatDaysSinceLastActivity(result.activity?.daysSinceLastActivity)],
-                  ["Evidence count", result.activity?.evidenceCount ?? result.metrics.evidenceCount],
-                  ["Coverage", breakdown.network?.metadata?.coverage?.blocksAnalyzed
-                    ? `${breakdown.network.metadata.coverage.blocksAnalyzed} blocks; full history: ${
-                        breakdown.network.metadata.coverage.fullHistory ? "yes" : "no"
-                      }`
-                    : "Unavailable"]
-                ].map(([label, value]) => (
-                  <div key={label} className="flex justify-between gap-3 border-b border-arc-border/60 py-2">
-                    <dt className="text-slate-500">{label}</dt>
-                    <dd className="font-medium text-slate-200">{value}</dd>
-                  </div>
-                ))}
-              </dl>
+              {breakdown.internal?.profileStatus === "no_data" ? (
+                <p className="rounded-lg border border-sky-300/25 bg-sky-300/10 p-3 text-sm font-medium text-sky-100">
+                  No KX activity available. Cross-chain evidence was used for this assessment.
+                </p>
+              ) : (
+                <dl className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+                  {[
+                    ["Network transactions", result.activity?.successfulPayments ?? result.metrics.successfulPayments],
+                    ["Failed payments", result.activity?.failedPayments ?? 0],
+                    ["Products purchased", result.activity?.resourcesPurchased ?? result.metrics.resourcesPurchased],
+                    ["Products downloaded", result.activity?.resourcesDownloaded ?? result.metrics.resourcesDownloaded],
+                    ["Jobs created", result.activity?.requestsCreated ?? 0],
+                    [
+                      "Protected transactions funded",
+                      result.activity?.protectedTransactionsFunded ??
+                        result.metrics.protectedTransactionsFunded ??
+                        result.metrics.escrowsFunded
+                    ],
+                    ["Deliverables submitted", result.activity?.deliveriesSubmitted ?? 0],
+                    ["Funds released", result.activity?.fundsReleased ?? result.metrics.fundsReleased],
+                    ["Unique counterparties", result.activity?.uniqueCounterparties ?? 0],
+                    ["Average transaction", formatUSDC(result.activity?.averageTransactionAmountUSDC)],
+                    ["Average actions/day", result.activity?.averageActionsPerDay ?? "0.0"],
+                    ["Days since last activity", formatDaysSinceLastActivity(result.activity?.daysSinceLastActivity)]
+                  ].map(([label, value]) => (
+                    <div key={label} className="flex justify-between gap-3 border-b border-arc-border/60 py-2">
+                      <dt className="text-slate-500">{label}</dt>
+                      <dd className="font-medium text-slate-200">{value}</dd>
+                    </div>
+                  ))}
+                </dl>
+              )}
             </DetailSection>
           </section>
         </div>

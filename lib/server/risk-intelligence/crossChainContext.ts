@@ -10,7 +10,7 @@ import type {
 const crossChainCacheTtlMs = 24 * 60 * 60 * 1000;
 const crossChainFailureTtlMs = 2 * 60 * 1000;
 const maxExplorerRecords = 1_000;
-const crossChainContextSchemaVersion = "kx.cross-chain-context.v2";
+const crossChainContextSchemaVersion = "kx.cross-chain-context.v3";
 const supportedNetworkIds: CrossChainNetworkId[] = ["ethereum", "base", "bnb"];
 const providerTimeoutMs = 12_000;
 
@@ -45,6 +45,7 @@ type ProviderResult = {
   contractInteractions: number | null;
   firstActivity: string | null;
   lastActivity: string | null;
+  timestampSample: string[];
   coverage: "full" | "limited" | "unavailable";
   message?: string;
   providerErrors?: string[];
@@ -468,6 +469,15 @@ function getActivityBounds(transactions: IndexedTransaction[]): { first: string 
   };
 }
 
+function getTimestampSample(transactions: IndexedTransaction[], limit = 50): string[] {
+  return transactions
+    .map((tx) => tx.timestamp)
+    .filter((value): value is number => typeof value === "number" && Number.isFinite(value))
+    .sort((a, b) => a - b)
+    .slice(-limit)
+    .map((timestamp) => new Date(timestamp * 1000).toISOString());
+}
+
 function getWalletAgeDays(firstActivity: string | null): number | null {
   if (!firstActivity) return null;
   return Math.max(0, Math.floor((Date.now() - new Date(firstActivity).getTime()) / 86_400_000));
@@ -494,6 +504,7 @@ class BlockscoutContextProvider implements CrossChainContextProvider {
         contractInteractions: null,
         firstActivity: null,
         lastActivity: null,
+        timestampSample: [],
         coverage: "unavailable",
         message: "Blockscout could not return indexed wallet context.",
         providerErrors
@@ -525,6 +536,7 @@ class BlockscoutContextProvider implements CrossChainContextProvider {
       contractInteractions: coverage === "full" ? getContractInteractions(transactions, wallet) : null,
       firstActivity: coverage === "full" ? bounds.first : null,
       lastActivity: bounds.last,
+      timestampSample: getTimestampSample(transactions),
       coverage,
       message:
         coverage === "limited"
@@ -566,6 +578,7 @@ class EtherscanStyleContextProvider implements CrossChainContextProvider {
         contractInteractions: null,
         firstActivity: null,
         lastActivity: null,
+        timestampSample: [],
         coverage: "unavailable",
         message: "Explorer API could not return indexed wallet context.",
         providerErrors: [providerError]
@@ -582,6 +595,7 @@ class EtherscanStyleContextProvider implements CrossChainContextProvider {
           contractInteractions: null,
           firstActivity: null,
           lastActivity: null,
+          timestampSample: [],
           coverage: "unavailable",
           message: body.message,
           providerErrors: [
@@ -615,6 +629,7 @@ class EtherscanStyleContextProvider implements CrossChainContextProvider {
       contractInteractions: coverage === "full" ? getContractInteractions(transactions, wallet) : null,
       firstActivity: coverage === "full" ? bounds.first : null,
       lastActivity: bounds.last,
+      timestampSample: getTimestampSample(transactions),
       coverage,
       message:
         coverage === "limited"
@@ -643,6 +658,7 @@ function notConfiguredNetwork(config: ChainConfig): CrossChainNetworkContext {
     contractInteractionCount: null,
     firstActivity: null,
     lastActivity: null,
+    timestampSample: [],
     source: null,
     indexedAt: null,
     coverage: "unavailable",
@@ -764,6 +780,7 @@ async function analyzeNetwork(config: ChainConfig, wallet: string): Promise<Cros
       contractInteractionCount: result.contractInteractions,
       firstActivity: result.firstActivity,
       lastActivity: result.lastActivity,
+      timestampSample: result.timestampSample,
       source: result.source,
       indexedAt,
       coverage: result.coverage,
@@ -784,6 +801,7 @@ async function analyzeNetwork(config: ChainConfig, wallet: string): Promise<Cros
     contractInteractionCount: null,
     firstActivity: null,
     lastActivity: null,
+    timestampSample: [],
     source: null,
     indexedAt: new Date().toISOString(),
     coverage: "unavailable",
@@ -891,6 +909,7 @@ export async function refreshCrossChainContext(
             contractInteractionCount: null,
             firstActivity: null,
             lastActivity: null,
+            timestampSample: [],
             source: null,
             indexedAt: new Date().toISOString(),
             coverage: "unavailable" as const,
