@@ -202,10 +202,12 @@ npm install @circle-fin/app-kit @circle-fin/adapter-viem-v2 viem
 Server-side swap configuration:
 
 ```env
-KIT_KEY=
+KIT_KEY=KIT_KEY:<keyId>:<keySecret>
+APP_KIT_SERVER_PRIVATE_KEY=0x...
 ```
 
-Keep `KIT_KEY` server-side only. Never expose Circle credentials through `NEXT_PUBLIC_*`.
+Keep `KIT_KEY` and `APP_KIT_SERVER_PRIVATE_KEY` server-side only. Never expose Circle credentials
+or server-wallet private keys through `NEXT_PUBLIC_*`.
 
 ```ts
 const trust = await client.trust(recipient);
@@ -224,11 +226,11 @@ Supported testnet behavior:
 
 - **Protected Send**: checks the recipient wallet, then executes App Kit Send from the connected browser wallet on Arc Testnet.
 - **Protected Bridge**: checks the destination wallet, then executes App Kit Bridge for the supported testnet chains shown in the UI.
-- **Protected Swap**: runs the KX trust gate, then calls a secure server route. Swap execution remains disabled until a server-side App Kit wallet/credential model is configured.
+- **Protected Swap**: runs the KX trust gate, calls a secure server route for `estimateSwap`, then executes App Kit Swap from a dedicated Arc Testnet server wallet after explicit confirmation. The local MVP limits Arc Testnet swaps to `USDC -> EURC`.
 
 Browser-wallet limitation: Send and Bridge use the connected browser wallet adapter via
-`createViemAdapterFromProvider({ provider })`. Swap is server-side only and must not expose
-server credentials in the browser.
+`createViemAdapterFromProvider({ provider })`. Swap uses `createViemAdapterFromPrivateKey` on the
+server and must not expose server credentials in the browser.
 
 ## Live Demo
 

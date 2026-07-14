@@ -13,7 +13,9 @@ import {
 } from "@/lib/chains/arcTestnet";
 import {
   getArcscanAddressStats,
-  type ArcscanAddressStats
+  getArcscanWalletTransactionSample,
+  type ArcscanAddressStats,
+  type ArcscanWalletTransactionSample
 } from "@/lib/server/risk-intelligence/arcscanAdapter";
 import { isPostgresEnabled, pgQuery } from "@/lib/server/postgres";
 
@@ -43,6 +45,7 @@ export type ArcNetworkSnapshot = {
   accountCode?: string;
   isContractAccount?: boolean;
   arcscanStats?: ArcscanAddressStats | null;
+  arcscanTransactionSample?: ArcscanWalletTransactionSample[];
 };
 
 type SnapshotRow = {
@@ -110,6 +113,11 @@ async function getCachedSnapshot(
   if (!row) return null;
   const ageSeconds = (Date.now() - new Date(row.updated_at).getTime()) / 1000;
   const useIndexedData = options.useIndexedData ?? true;
+  const hasExplorerTxCount = (row.data.arcscanStats?.transactionsCount ?? 0) > 0;
+  const hasExplorerSample = (row.data.arcscanTransactionSample?.length ?? 0) > 0;
+  if (useIndexedData && ageSeconds <= cacheTtlSeconds && hasExplorerTxCount && !hasExplorerSample) {
+    return null;
+  }
   return useIndexedData && ageSeconds <= cacheTtlSeconds
     ? { ...row.data, cacheSource: "postgres_cache" }
     : null;
@@ -190,11 +198,12 @@ export async function indexArcNetworkSnapshot(
   if (cached) return cached;
 
   const provider = new JsonRpcProvider(rpcUrl, ARC_TESTNET_CHAIN_ID);
-  const [latestBlock, balance, accountCode, arcscanStats] = await Promise.all([
+  const [latestBlock, balance, accountCode, arcscanStats, arcscanTransactionSample] = await Promise.all([
     provider.getBlockNumber(),
     provider.getBalance(normalizedWallet),
     provider.getCode(normalizedWallet),
-    getArcscanAddressStats(normalizedWallet)
+    getArcscanAddressStats(normalizedWallet),
+    getArcscanWalletTransactionSample(normalizedWallet, 50)
   ]);
   const fromBlock = Math.max(0, latestBlock - Math.max(1, defaultBlockWindow));
   const walletTopic = getPaddedAddressTopic(normalizedWallet);
@@ -250,7 +259,8 @@ export async function indexArcNetworkSnapshot(
     cacheSource: "live_index",
     accountCode,
     isContractAccount: accountCode !== "0x",
-    arcscanStats
+    arcscanStats,
+    arcscanTransactionSample
   };
 
   await saveSnapshot(snapshot);

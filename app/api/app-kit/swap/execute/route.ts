@@ -1,32 +1,13 @@
 import { NextResponse } from "next/server";
 import {
-  estimateProtectedSwap,
+  executeProtectedSwap,
   getAppKitSwapConfigStatus,
   getReadableAppKitError,
-  getServerWalletBalances,
   type AppKitSwapRequest,
   validateSwapRequest
 } from "@/lib/server/appKitSwap";
 
 export const runtime = "nodejs";
-
-export async function GET() {
-  const config = getAppKitSwapConfigStatus();
-  if (!config.ok) {
-    return NextResponse.json({ ...config, balances: null });
-  }
-
-  try {
-    const balances = await getServerWalletBalances();
-    return NextResponse.json({ ...config, balances });
-  } catch (error) {
-    return NextResponse.json({
-      ...config,
-      balances: null,
-      balanceError: getReadableAppKitError(error)
-    });
-  }
-}
 
 export async function POST(request: Request) {
   let body: AppKitSwapRequest;
@@ -53,7 +34,7 @@ export async function POST(request: Request) {
   }
 
   try {
-    const result = await estimateProtectedSwap({
+    const result = await executeProtectedSwap({
       amountIn: parsed.amountIn,
       tokenIn: parsed.tokenIn,
       tokenOut: parsed.tokenOut
@@ -63,7 +44,7 @@ export async function POST(request: Request) {
     return NextResponse.json(
       {
         ok: false,
-        error: "APP_KIT_SWAP_ESTIMATE_FAILED",
+        error: "APP_KIT_SWAP_EXECUTION_FAILED",
         message: getReadableAppKitError(error),
         config: getAppKitSwapConfigStatus()
       },

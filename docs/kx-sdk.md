@@ -101,8 +101,9 @@ if (evaluation.allow) {
 ## Protected Circle App Kit Flows
 
 KX can sit in front of common App Kit flows as a trust guardrail. Protected Send and Protected
-Bridge use the connected browser wallet adapter. Protected Swap is server-side only and remains
-disabled until a secure App Kit server wallet and `KIT_KEY` are configured.
+Bridge use the connected browser wallet adapter. Protected Swap is server-side only: KX checks trust,
+the server calls `estimateSwap`, and execution uses a dedicated Arc Testnet server wallet after
+explicit confirmation.
 
 ```ts
 const trust = await client.trust(recipient);
@@ -123,8 +124,15 @@ Required packages:
 npm install @circle-fin/app-kit @circle-fin/adapter-viem-v2 viem
 ```
 
-Keep `KIT_KEY` server-side only. Do not expose App Kit server credentials through browser-visible
-environment variables.
+Server-side swap requires:
+
+```env
+KIT_KEY=KIT_KEY:<keyId>:<keySecret>
+APP_KIT_SERVER_PRIVATE_KEY=0x...
+```
+
+Keep both values server-side only. Do not expose App Kit server credentials or private keys through
+browser-visible environment variables.
 
 ## Resource Purchase Flow
 

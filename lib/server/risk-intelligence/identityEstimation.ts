@@ -466,6 +466,24 @@ function getCircadianSignal(sample: ArcscanWalletTransactionSample[]) {
   return getCircadianSignalFromTimestamps(timestamps);
 }
 
+function getSampleDebug(sample: ArcscanWalletTransactionSample[]) {
+  return {
+    count: sample.length,
+    validTimestamps: getSortedTimestamps(sample).length,
+    fieldsPresent: {
+      hash: sample.some((item) => Boolean(item.hash)),
+      timestamp: sample.some((item) => Boolean(item.timestamp)),
+      from: sample.some((item) => Boolean(item.from)),
+      to: sample.some((item) => Boolean(item.to)),
+      gasPrice: sample.some((item) => Boolean(item.gasPrice)),
+      maxFeePerGas: sample.some((item) => Boolean(item.maxFeePerGas)),
+      gasUsed: sample.some((item) => Boolean(item.gasUsed)),
+      status: sample.some((item) => Boolean(item.status)),
+      blockNumber: sample.some((item) => item.blockNumber !== null)
+    }
+  };
+}
+
 function getTimingVarianceSignal(sample: ArcscanWalletTransactionSample[]) {
   const intervals = getIntervalsMinutes(getSortedTimestamps(sample));
   const cv = coefficientOfVariation(intervals);
@@ -696,6 +714,7 @@ export async function estimateWalletIdentityFromArcNetwork(
     arcDeclaredIdentity?: string | null;
     arcDeclaredUserType?: "HUMAN" | "AGENT" | "unknown";
     declaredUserType?: "HUMAN" | "AGENT" | "unknown";
+    arcTransactionSample?: ArcscanWalletTransactionSample[];
   } = {}
 ): Promise<IdentityEstimation> {
   const kxDeclaredUserType =
@@ -703,7 +722,20 @@ export async function estimateWalletIdentityFromArcNetwork(
   const arcDeclaredUserType = options.arcDeclaredUserType ?? "unknown";
   const comparableDeclaredUserType =
     kxDeclaredUserType !== "unknown" ? kxDeclaredUserType : arcDeclaredUserType;
-  const cached = await getCachedIdentityEstimation(wallet, options);
+  const providedArcSample = (options.arcTransactionSample ?? options.snapshot?.arcscanTransactionSample ?? [])
+    .filter((item) => item.hash && item.timestamp)
+    .slice(0, 50);
+  if (process.env.NODE_ENV !== "production") {
+    const sampleDebug = getSampleDebug(providedArcSample);
+    console.info(
+      `[KX HumanEstimator input] wallet=${wallet} optionKeys=${Object.keys(options).join(",") || "none"} ` +
+      `snapshot=${options.snapshot ? "present" : "missing"} arcTxSample=${sampleDebug.count} ` +
+      `validTimestamps=${sampleDebug.validTimestamps} fields=${JSON.stringify(sampleDebug.fieldsPresent)}`
+    );
+  }
+  const cached = providedArcSample.length > 0
+    ? null
+    : await getCachedIdentityEstimation(wallet, options);
   if (cached) {
     return {
       ...cached,
@@ -717,9 +749,22 @@ export async function estimateWalletIdentityFromArcNetwork(
 
   const snapshot = options.snapshot ?? await indexArcNetworkSnapshot(wallet, options);
   const previousSample = await getStoredTransactionSample(snapshot.wallet);
-  const currentSample = await getArcscanWalletTransactionSample(snapshot.wallet, 50);
+  const currentSample = providedArcSample.length > 0
+    ? providedArcSample
+    : await getArcscanWalletTransactionSample(snapshot.wallet, 50);
   await replaceTransactionSample(snapshot.wallet, currentSample);
   const signals = buildSignals(snapshot, currentSample, previousSample);
+  const timestampedTxCount = getSortedTimestamps(currentSample).length;
+  if (process.env.NODE_ENV !== "production") {
+    const sampleDebug = getSampleDebug(currentSample);
+    const missingFields = Object.entries(sampleDebug.fieldsPresent)
+      .filter(([, present]) => !present)
+      .map(([field]) => field);
+    console.info(
+      `[KX Human/Agent Estimation] wallet=${snapshot.wallet} arcTransactions=${currentSample.length} ` +
+      `validTimestamps=${timestampedTxCount} missingFields=${missingFields.join(",") || "none"}`
+    );
+  }
   const scoredSignals = getScoredSignals(signals);
   const humanVotes = scoredSignals.filter((item) => item.result === "Human").length;
   const agentVotes = scoredSignals.filter((item) => item.result === "Agent-like").length;
@@ -738,7 +783,6 @@ export async function estimateWalletIdentityFromArcNetwork(
     totalSignals: scoredSignals.length,
     knownSignals
   });
-  const timestampedTxCount = getSortedTimestamps(currentSample).length;
   const confidence = getConfidence({
     totalSignals: scoredSignals.length,
     knownSignals,

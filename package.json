@@ -12,6 +12,7 @@
     "lint": "eslint .",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
+    "test": "node scripts/qa/protected-send-guard.test.cjs",
     "qa:release": "node scripts/qa/release-smoke.mjs",
     "typecheck": "tsc --noEmit",
     "contracts:compile": "hardhat compile",

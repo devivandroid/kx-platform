@@ -89,9 +89,19 @@ export async function getArcNetworkRiskProfile(
 ): Promise<RiskProfile> {
   try {
     const snapshot = await indexArcNetworkSnapshot(wallet, options);
+    if (process.env.NODE_ENV !== "production") {
+      console.info(
+        `[KX Arc->HumanEstimator] wallet=${snapshot.wallet} snapshotFields=${Object.keys(snapshot).join(",")} ` +
+        `txCount=${snapshot.arcscanStats?.transactionsCount ?? snapshot.usdcTransferTransactions} ` +
+        `transfers=${snapshot.arcscanStats?.transfersCount ?? snapshot.usdcTransfers} ` +
+        `counterparties=${snapshot.uniqueCounterparties} lastActivity=${snapshot.lastTransferAt ?? "null"} ` +
+        `arcscanSample=${snapshot.arcscanTransactionSample?.length ?? 0}`
+      );
+    }
     const identityEstimation = await estimateWalletIdentityFromArcNetwork(snapshot.wallet, {
       ...options,
       snapshot,
+      arcTransactionSample: snapshot.arcscanTransactionSample,
       useIndexedData: true,
       declaredUserType: "unknown"
     });

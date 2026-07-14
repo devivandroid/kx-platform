@@ -3,13 +3,14 @@
 import { AppKit, isRetryableError } from "@circle-fin/app-kit";
 import { ArcTestnet, BaseSepolia, EthereumSepolia } from "@circle-fin/app-kit/chains";
 import { createViemAdapterFromProvider } from "@circle-fin/adapter-viem-v2";
-import { useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { isAddress } from "ethers";
 import type { EIP1193Provider } from "viem";
 import { CodeSnippet } from "@/components/CodeSnippet";
 import { LoadingSpinner } from "@/components/LoadingSpinner";
 import { PageHeader } from "@/components/PageHeader";
 import { PageShell } from "@/components/PageShell";
+import { createSingleExecutionGuard } from "@/lib/client/singleExecutionGuard";
 import { KXClient, type TrustWalletResponse } from "@/lib/sdk/kx";
 import { getExplorerTxUrl, shortenAddress } from "@/lib/web3";
 import { useWallet } from "@/hooks/useWallet";
@@ -29,8 +30,25 @@ type TrustExecutionState = {
   phase: FlowPhase;
   trust?: TrustWalletResponse;
   message?: string;
+  title?: string;
+  hint?: string;
   result?: unknown;
   txHash?: string | null;
+  actionLabel?: string;
+};
+
+type SwapPair = "USDC_EURC" | "EURC_USDC";
+
+type SwapStatus = {
+  ok: boolean;
+  serverWalletAddress?: string | null;
+  balances?: {
+    wallet: string;
+    nativeBalance: string;
+    USDC: string;
+    EURC: string;
+  } | null;
+  balanceError?: string;
 };
 
 const appKitSnippet = `const trust = await client.trust(recipient);
@@ -60,6 +78,80 @@ function normalizeError(error: unknown) {
   return "The App Kit operation could not be completed.";
 }
 
+function parseSwapError(body: unknown) {
+  const value = body as { error?: string; message?: string };
+  const message = value?.message ?? "";
+  const lower = message.toLowerCase();
+
+  const balanceMatch = message.match(/Required\s+([0-9.,]+)\s+([A-Z]+),\s+available\s+([0-9.,]+)\s+([A-Z]+)/i);
+  if (lower.includes("insufficient") && balanceMatch) {
+    const requiredAmount = balanceMatch[1];
+    const token = balanceMatch[2];
+    const availableAmount = balanceMatch[3];
+    return {
+      title: `Insufficient ${token} balance`,
+      message: `This wallet has ${availableAmount} ${token} available, but ${requiredAmount} ${token} is required.`,
+      hint: "Reduce the amount or swap in the opposite direction."
+    };
+  }
+
+  if (lower.includes("insufficient")) {
+    return {
+      title: "Insufficient balance",
+      message: "The server wallet does not have enough funds for this swap.",
+      hint: "Reduce the amount or choose the opposite direction."
+    };
+  }
+  if (lower.includes("liquidity") || lower.includes("route") || lower.includes("no quote")) {
+    return {
+      title: "No swap route available",
+      message: "Circle App Kit could not find a route for this pair and amount.",
+      hint: "Try a smaller amount or the opposite direction."
+    };
+  }
+  if (lower.includes("slippage")) {
+    return {
+      title: "Slippage too high",
+      message: "The estimated swap moved outside the configured slippage tolerance.",
+      hint: "Try again with a smaller amount."
+    };
+  }
+  if (lower.includes("unsupported")) {
+    return {
+      title: "Unsupported swap pair",
+      message: "This demo currently supports USDC to EURC and EURC to USDC on Arc Testnet.",
+      hint: "Choose one of the available directions."
+    };
+  }
+  if (lower.includes("not configured") || lower.includes("kit_key") || lower.includes("private key")) {
+    return {
+      title: "Swap wallet not configured",
+      message: "Protected Swap needs a configured Arc Testnet server wallet before it can run.",
+      hint: "Check the server-side App Kit configuration."
+    };
+  }
+  if (lower.includes("rejected") || lower.includes("denied") || lower.includes("cancelled")) {
+    return {
+      title: "Transaction rejected",
+      message: "The transaction was not approved.",
+      hint: "Review the swap and try again."
+    };
+  }
+  if (lower.includes("network") || lower.includes("provider") || lower.includes("fetch") || lower.includes("timeout")) {
+    return {
+      title: "Network unavailable",
+      message: "The swap provider could not be reached right now.",
+      hint: "Try again in a moment."
+    };
+  }
+
+  return {
+    title: "Swap unavailable",
+    message: "Circle App Kit could not complete this swap request.",
+    hint: "Try a smaller amount or the opposite direction."
+  };
+}
+
 function extractTxHash(result: unknown): string | null {
   const value = result as { txHash?: string; hash?: string; transactionHash?: string };
   return value?.txHash ?? value?.hash ?? value?.transactionHash ?? null;
@@ -76,6 +168,14 @@ function getBridgeStepLinks(result: unknown) {
       txHash: step.txHash ?? step.hash ?? null
     }))
     .filter((step) => step.txHash);
+}
+
+function formatEstimatedHumanity(trust: TrustWalletResponse) {
+  if (!trust.estimatedIdentity || trust.estimatedIdentity === "Unknown" || trust.humanProbability === null) {
+    return "Insufficient evidence";
+  }
+
+  return `${trust.estimatedIdentity} ${trust.humanProbability}%`;
 }
 
 async function createBrowserAdapter() {
@@ -95,6 +195,7 @@ async function createBrowserAdapter() {
 export default function ProtectedTransactionsPage() {
   const wallet = useWallet();
   const kxClient = useMemo(() => new KXClient({ baseUrl: "" }), []);
+  const sendExecutionGuard = useMemo(() => createSingleExecutionGuard("App Kit Send"), []);
   const [sendRecipient, setSendRecipient] = useState("");
   const [sendAmount, setSendAmount] = useState("1.00");
   const [bridgeRecipient, setBridgeRecipient] = useState("");
@@ -103,10 +204,37 @@ export default function ProtectedTransactionsPage() {
   const [bridgeTo, setBridgeTo] = useState<ChainId>("Base_Sepolia");
   const [swapTarget, setSwapTarget] = useState("Arc_Testnet protocol context");
   const [swapAmount, setSwapAmount] = useState("1.00");
-  const [swapTokenOut, setSwapTokenOut] = useState("USDT");
+  const [swapPair, setSwapPair] = useState<SwapPair>("USDC_EURC");
   const [sendState, setSendState] = useState<TrustExecutionState>({ phase: "idle" });
+  const [sendSubmitting, setSendSubmitting] = useState(false);
+  const [sendCompleted, setSendCompleted] = useState(false);
   const [bridgeState, setBridgeState] = useState<TrustExecutionState>({ phase: "idle" });
   const [swapState, setSwapState] = useState<TrustExecutionState>({ phase: "idle" });
+  const [swapStatus, setSwapStatus] = useState<SwapStatus | null>(null);
+  const [swapStatusLoading, setSwapStatusLoading] = useState(false);
+
+  const [swapTokenIn, swapTokenOut] = swapPair.split("_") as ["USDC" | "EURC", "USDC" | "EURC"];
+
+  const refreshSwapStatus = useCallback(async () => {
+    setSwapStatusLoading(true);
+    try {
+      const response = await fetch("/api/app-kit/swap/estimate");
+      const body = (await response.json()) as SwapStatus;
+      setSwapStatus(body);
+    } catch (error) {
+      setSwapStatus({
+        ok: false,
+        balances: null,
+        balanceError: normalizeError(error)
+      });
+    } finally {
+      setSwapStatusLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    void refreshSwapStatus();
+  }, [refreshSwapStatus]);
 
   const ensureWalletReady = async () => {
     if (!wallet.address) await wallet.connect();
@@ -133,24 +261,33 @@ export default function ProtectedTransactionsPage() {
       const trust = force ? sendState.trust : await runTrustGate(sendRecipient, setSendState);
       if (!trust) return;
       if (!force && trust.decision !== "ALLOW") return;
+      if (!force) return;
+      if (!sendExecutionGuard.canExecute()) return;
 
       setSendState({ phase: "executing", trust, message: "Opening Circle App Kit Send..." });
-      await ensureWalletReady();
-      const adapter = await createBrowserAdapter();
-      const result = await kit.send({
-        from: { adapter, chain: ArcTestnet },
-        to: sendRecipient,
-        amount: sendAmount,
-        token: "USDC"
+      setSendSubmitting(true);
+      const result = await sendExecutionGuard.run(async () => {
+        await ensureWalletReady();
+        const adapter = await createBrowserAdapter();
+        return kit.send({
+          from: { adapter, chain: ArcTestnet },
+          to: sendRecipient,
+          amount: sendAmount,
+          token: "USDC"
+        });
       });
+      if (!result) return;
       const txHash = extractTxHash(result);
       setSendState({ phase: "success", trust, result, txHash, message: "Send submitted." });
+      setSendCompleted(true);
     } catch (error) {
       setSendState({
         phase: "error",
         trust: sendState.trust,
         message: normalizeError(error)
       });
+    } finally {
+      setSendSubmitting(false);
     }
   };
 
@@ -217,24 +354,81 @@ export default function ProtectedTransactionsPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           amountIn: swapAmount,
-          tokenIn: "USDC",
+          tokenIn: swapTokenIn,
           tokenOut: swapTokenOut,
           chain: "Arc_Testnet"
         })
       });
       const body = await response.json();
+      const friendlyError = response.ok ? null : parseSwapError(body);
       setSwapState({
         phase: response.ok ? "success" : "error",
         trust,
-        result: body,
-        message: response.ok ? "Swap estimate received." : body.message ?? "Swap is unavailable."
+        result: response.ok ? body.estimate : undefined,
+        title: friendlyError?.title,
+        message: response.ok ? "Swap estimate received. Confirm to execute with the server wallet." : friendlyError?.message,
+        hint: friendlyError?.hint,
+        actionLabel: response.ok ? "Execute real swap" : undefined
       });
     } catch (error) {
       setSwapState({ phase: "error", message: normalizeError(error) });
     }
   };
 
-  const renderTrustResult = (state: TrustExecutionState, onContinue: () => void) => {
+  const handleSwapExecute = async (force = false) => {
+    try {
+      const trust = swapState.trust;
+      if (!trust) {
+        setSwapState({ phase: "error", message: "Run the trust check and estimate before executing swap." });
+        return;
+      }
+      if (!force && trust.decision !== "ALLOW") return;
+
+      setSwapState({
+        ...swapState,
+        phase: "executing",
+        trust,
+        message: "Executing real Circle App Kit swap with the server wallet..."
+      });
+      const response = await fetch("/api/app-kit/swap/execute", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          amountIn: swapAmount,
+          tokenIn: swapTokenIn,
+          tokenOut: swapTokenOut,
+          chain: "Arc_Testnet"
+        })
+      });
+      const body = await response.json();
+      const txHash = body?.result?.txHash ?? null;
+      const friendlyError = response.ok ? null : parseSwapError(body);
+      setSwapState({
+        phase: response.ok ? "success" : "error",
+        trust,
+        result: response.ok ? body.result : undefined,
+        txHash,
+        title: friendlyError?.title,
+        message: response.ok ? "Swap submitted." : friendlyError?.message,
+        hint: friendlyError?.hint
+      });
+      if (response.ok) await refreshSwapStatus();
+    } catch (error) {
+      setSwapState({ ...swapState, phase: "error", message: normalizeError(error) });
+    }
+  };
+
+  const resetSendExecution = () => {
+    sendExecutionGuard.reset();
+    setSendCompleted(false);
+  };
+
+  const renderTrustResult = (
+    state: TrustExecutionState,
+    onContinue: () => void,
+    continueLabel = "Continue with App Kit",
+    actionDisabled = false
+  ) => {
     if (state.phase === "idle") return null;
     if (state.phase === "trust" || state.phase === "executing") {
       return (
@@ -247,7 +441,9 @@ export default function ProtectedTransactionsPage() {
     if (state.phase === "error") {
       return (
         <div className="mt-4 rounded-lg border border-red-300/40 bg-red-300/10 p-3 text-sm leading-6 text-red-100">
-          {state.message}
+          {state.title ? <p className="font-semibold text-white">{state.title}</p> : null}
+          <p className={state.title ? "mt-1" : undefined}>{state.message}</p>
+          {state.hint ? <p className="mt-2 text-xs leading-5 text-red-100/80">{state.hint}</p> : null}
         </div>
       );
     }
@@ -273,6 +469,10 @@ export default function ProtectedTransactionsPage() {
             <dt className="text-slate-500">Risk Score</dt>
             <dd className="mt-1 text-white">{state.trust.riskScore ?? "Not available"}</dd>
           </div>
+          <div className="col-span-2">
+            <dt className="text-slate-500">Estimated Humanity</dt>
+            <dd className="mt-1 text-white">{formatEstimatedHumanity(state.trust)}</dd>
+          </div>
         </dl>
         {state.txHash ? (
           <a
@@ -285,15 +485,25 @@ export default function ProtectedTransactionsPage() {
           </a>
         ) : null}
         {state.trust.decision === "ALLOW" ? (
-          <button type="button" onClick={onContinue} className="mt-4 inline-flex w-full justify-center rounded-lg bg-arc-blue px-4 py-3 text-sm font-semibold text-arc-ink">
-            Continue with App Kit
+          <button
+            type="button"
+            onClick={onContinue}
+            disabled={actionDisabled}
+            className="mt-4 inline-flex w-full justify-center rounded-lg bg-arc-blue px-4 py-3 text-sm font-semibold text-arc-ink disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            {state.actionLabel ?? continueLabel}
           </button>
         ) : (
           <div className="mt-4 grid gap-3">
             <p className="rounded-lg border border-amber-300/30 bg-amber-300/10 p-3 text-sm leading-6 text-amber-100">
               KX recommends review before continuing. This testnet demo allows an explicit override.
             </p>
-            <button type="button" onClick={onContinue} className="inline-flex w-full justify-center rounded-lg border border-amber-300/40 bg-amber-300/10 px-4 py-3 text-sm font-semibold text-amber-100">
+            <button
+              type="button"
+              onClick={onContinue}
+              disabled={actionDisabled}
+              className="inline-flex w-full justify-center rounded-lg border border-amber-300/40 bg-amber-300/10 px-4 py-3 text-sm font-semibold text-amber-100 disabled:cursor-not-allowed disabled:opacity-50"
+            >
               Continue anyway
             </button>
           </div>
@@ -335,10 +545,38 @@ export default function ProtectedTransactionsPage() {
           <p className="text-xs font-medium uppercase tracking-normal text-arc-blue">Protected Send</p>
           <h2 className="mt-2 text-lg font-semibold text-white">Send USDC after recipient trust</h2>
           <p className="mt-2 text-sm leading-6 text-slate-400">Checks the recipient wallet before calling App Kit Send.</p>
-          <input value={sendRecipient} onChange={(event) => setSendRecipient(event.target.value)} placeholder="Recipient wallet" className="mt-4 w-full rounded-lg border border-arc-border bg-black/30 px-4 py-3 text-sm text-white outline-none focus:border-arc-blue" />
-          <input value={sendAmount} onChange={(event) => setSendAmount(event.target.value)} placeholder="USDC amount" className="mt-3 w-full rounded-lg border border-arc-border bg-black/30 px-4 py-3 text-sm text-white outline-none focus:border-arc-blue" />
-          <button type="button" onClick={() => handleSend(false)} className="mt-4 inline-flex w-full justify-center rounded-lg border border-arc-border bg-white/5 px-4 py-3 text-sm font-semibold text-white hover:border-arc-blue">Check trust</button>
-          {renderTrustResult(sendState, () => handleSend(true))}
+          <input
+            value={sendRecipient}
+            onChange={(event) => {
+              setSendRecipient(event.target.value);
+              resetSendExecution();
+            }}
+            placeholder="Recipient wallet"
+            className="mt-4 w-full rounded-lg border border-arc-border bg-black/30 px-4 py-3 text-sm text-white outline-none focus:border-arc-blue"
+          />
+          <input
+            value={sendAmount}
+            onChange={(event) => {
+              setSendAmount(event.target.value);
+              resetSendExecution();
+            }}
+            placeholder="USDC amount"
+            className="mt-3 w-full rounded-lg border border-arc-border bg-black/30 px-4 py-3 text-sm text-white outline-none focus:border-arc-blue"
+          />
+          <button
+            type="button"
+            onClick={() => handleSend(false)}
+            disabled={sendSubmitting}
+            className="mt-4 inline-flex w-full justify-center rounded-lg border border-arc-border bg-white/5 px-4 py-3 text-sm font-semibold text-white hover:border-arc-blue disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            Check trust
+          </button>
+          {renderTrustResult(
+            sendState,
+            () => handleSend(true),
+            sendCompleted ? "Send submitted" : sendSubmitting ? "Sending..." : "Continue with App Kit",
+            sendSubmitting || sendCompleted
+          )}
         </article>
 
         <article className="rounded-lg border border-arc-border bg-arc-panel/80 p-5">
@@ -372,18 +610,50 @@ export default function ProtectedTransactionsPage() {
         <article className="rounded-lg border border-arc-border bg-arc-panel/80 p-5">
           <p className="text-xs font-medium uppercase tracking-normal text-arc-blue">Protected Swap</p>
           <h2 className="mt-2 text-lg font-semibold text-white">Server-side swap guard</h2>
-          <p className="mt-2 text-sm leading-6 text-slate-400">Swap requires server-side App Kit credentials and wallet execution. KX still checks protocol context first.</p>
+          <p className="mt-2 text-sm leading-6 text-slate-400">Checks KX Trust, estimates through Circle App Kit, then executes with a dedicated Arc Testnet server wallet after confirmation.</p>
+          <p className="mt-3 rounded-lg border border-arc-border bg-black/20 p-3 text-xs leading-5 text-slate-500">
+            Protected Swap currently executes through a dedicated Arc Testnet server wallet. Connected-wallet swap support depends on Circle App Kit client-side availability.
+          </p>
+          <div className="mt-4 rounded-lg border border-arc-border bg-black/20 p-3">
+            <div className="flex items-center justify-between gap-3">
+              <p className="text-xs font-semibold uppercase tracking-normal text-slate-500">Server wallet</p>
+              <button
+                type="button"
+                onClick={refreshSwapStatus}
+                className="text-xs font-semibold text-arc-blue hover:text-white"
+              >
+                {swapStatusLoading ? "Refreshing..." : "Refresh"}
+              </button>
+            </div>
+            <p className="mt-2 text-sm text-slate-300">
+              {swapStatus?.serverWalletAddress ? shortenAddress(swapStatus.serverWalletAddress) : "Not configured"}
+            </p>
+            <dl className="mt-3 grid grid-cols-2 gap-3 text-xs">
+              <div>
+                <dt className="text-slate-500">USDC balance</dt>
+                <dd className="mt-1 font-semibold text-white">{swapStatus?.balances?.USDC ?? "Unavailable"}</dd>
+              </div>
+              <div>
+                <dt className="text-slate-500">EURC balance</dt>
+                <dd className="mt-1 font-semibold text-white">{swapStatus?.balances?.EURC ?? "Unavailable"}</dd>
+              </div>
+            </dl>
+            {swapStatus?.balanceError ? (
+              <p className="mt-3 text-xs leading-5 text-amber-100">{swapStatus.balanceError}</p>
+            ) : null}
+          </div>
           <input value={swapTarget} onChange={(event) => setSwapTarget(event.target.value)} placeholder="Protocol/router address or context" className="mt-4 w-full rounded-lg border border-arc-border bg-black/30 px-4 py-3 text-sm text-white outline-none focus:border-arc-blue" />
-          <input value={swapAmount} onChange={(event) => setSwapAmount(event.target.value)} placeholder="USDC amount" className="mt-3 w-full rounded-lg border border-arc-border bg-black/30 px-4 py-3 text-sm text-white outline-none focus:border-arc-blue" />
-          <select value={swapTokenOut} onChange={(event) => setSwapTokenOut(event.target.value)} className="mt-3 w-full rounded-lg border border-arc-border bg-black/30 px-4 py-3 text-sm text-white outline-none focus:border-arc-blue">
-            <option value="USDT">USDT</option>
-            <option value="EURC">EURC</option>
+          <input value={swapAmount} onChange={(event) => setSwapAmount(event.target.value)} placeholder={`${swapTokenIn} amount`} className="mt-3 w-full rounded-lg border border-arc-border bg-black/30 px-4 py-3 text-sm text-white outline-none focus:border-arc-blue" />
+          <select value={swapPair} onChange={(event) => setSwapPair(event.target.value as SwapPair)} className="mt-3 w-full rounded-lg border border-arc-border bg-black/30 px-4 py-3 text-sm text-white outline-none focus:border-arc-blue">
+            <option value="USDC_EURC">USDC to EURC</option>
+            <option value="EURC_USDC">EURC to USDC</option>
           </select>
           <button type="button" onClick={handleSwapEstimate} className="mt-4 inline-flex w-full justify-center rounded-lg border border-arc-border bg-white/5 px-4 py-3 text-sm font-semibold text-white hover:border-arc-blue">Check trust and estimate swap</button>
-          {renderTrustResult(swapState, handleSwapEstimate)}
-          {swapState.result ? (
-            <pre className="mt-3 max-h-48 overflow-auto rounded-lg border border-arc-border bg-black/30 p-3 text-xs leading-5 text-slate-300">{JSON.stringify(swapState.result, null, 2)}</pre>
-          ) : null}
+          {renderTrustResult(
+            swapState,
+            () => handleSwapExecute(swapState.trust?.decision !== "ALLOW"),
+            "Execute real swap"
+          )}
         </article>
       </section>
     </PageShell>

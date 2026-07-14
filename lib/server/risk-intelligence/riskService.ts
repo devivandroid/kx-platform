@@ -134,10 +134,13 @@ async function attachCachedCrossChainContext(
     return buildCrossChainBaselineProfile(profile, crossChainContext);
   }
 
-  const identityEstimation =
-    options.allowIdentityEstimation && crossChainContext.summary.networksAnalyzed > 0
-      ? buildCrossChainIdentityEstimation(profile, crossChainContext)
-      : profile.identityEstimation;
+  const shouldUseCrossChainIdentity =
+    options.allowIdentityEstimation &&
+    crossChainContext.summary.networksAnalyzed > 0 &&
+    (!profile.identityEstimation || profile.identityEstimation.estimatedUserType === "Unknown");
+  const identityEstimation = shouldUseCrossChainIdentity
+    ? buildCrossChainIdentityEstimation(profile, crossChainContext)
+    : profile.identityEstimation;
 
   const confidenceLevel = crossChainContext.confidenceBoost
     ? maxConfidence(profile.scores.confidenceLevel, crossChainContext.confidenceBoost)
