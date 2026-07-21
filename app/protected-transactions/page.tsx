@@ -146,8 +146,8 @@ function parseSwapError(body: unknown) {
   }
 
   return {
-    title: "Swap unavailable",
-    message: "Circle App Kit could not complete this swap request.",
+    title: "Swap estimate unavailable",
+    message: "KX Trust completed, but Circle App Kit could not estimate this swap request.",
     hint: "Try a smaller amount or the opposite direction."
   };
 }
@@ -222,10 +222,11 @@ export default function ProtectedTransactionsPage() {
       const body = (await response.json()) as SwapStatus;
       setSwapStatus(body);
     } catch (error) {
+      console.error("[KX Protected Swap] balance status refresh failed", error);
       setSwapStatus({
         ok: false,
         balances: null,
-        balanceError: normalizeError(error)
+        balanceError: "Server wallet balances are temporarily unavailable. Try refreshing in a moment."
       });
     } finally {
       setSwapStatusLoading(false);
@@ -429,6 +430,34 @@ export default function ProtectedTransactionsPage() {
     continueLabel = "Continue with App Kit",
     actionDisabled = false
   ) => {
+    const renderTrustSummary = (trust: TrustWalletResponse) => (
+      <>
+        <div className="flex items-center justify-between gap-3">
+          <div>
+            <p className="text-xs text-slate-500">KX Trust decision</p>
+            <p className="mt-1 text-sm text-slate-300">{shortenAddress(trust.wallet)}</p>
+          </div>
+          <span className={`rounded-full border px-3 py-1 text-xs font-semibold ${decisionClass(trust.decision)}`}>
+            {trust.decision}
+          </span>
+        </div>
+        <dl className="mt-4 grid grid-cols-2 gap-3 text-sm">
+          <div>
+            <dt className="text-slate-500">Trust Score</dt>
+            <dd className="mt-1 text-white">{trust.trustScore ?? "Not available"}</dd>
+          </div>
+          <div>
+            <dt className="text-slate-500">Risk Score</dt>
+            <dd className="mt-1 text-white">{trust.riskScore ?? "Not available"}</dd>
+          </div>
+          <div className="col-span-2">
+            <dt className="text-slate-500">Estimated Humanity</dt>
+            <dd className="mt-1 text-white">{formatEstimatedHumanity(trust)}</dd>
+          </div>
+        </dl>
+      </>
+    );
+
     if (state.phase === "idle") return null;
     if (state.phase === "trust" || state.phase === "executing") {
       return (
@@ -439,6 +468,19 @@ export default function ProtectedTransactionsPage() {
       );
     }
     if (state.phase === "error") {
+      if (state.trust) {
+        return (
+          <div className="mt-4 rounded-lg border border-arc-border bg-black/20 p-4">
+            {renderTrustSummary(state.trust)}
+            <div className="mt-4 rounded-lg border border-amber-300/40 bg-amber-300/10 p-3 text-sm leading-6 text-amber-100">
+              {state.title ? <p className="font-semibold text-white">{state.title}</p> : null}
+              <p className={state.title ? "mt-1" : undefined}>{state.message}</p>
+              {state.hint ? <p className="mt-2 text-xs leading-5 text-amber-100/80">{state.hint}</p> : null}
+            </div>
+          </div>
+        );
+      }
+
       return (
         <div className="mt-4 rounded-lg border border-red-300/40 bg-red-300/10 p-3 text-sm leading-6 text-red-100">
           {state.title ? <p className="font-semibold text-white">{state.title}</p> : null}
@@ -451,29 +493,7 @@ export default function ProtectedTransactionsPage() {
 
     return (
       <div className="mt-4 rounded-lg border border-arc-border bg-black/20 p-4">
-        <div className="flex items-center justify-between gap-3">
-          <div>
-            <p className="text-xs text-slate-500">KX Trust decision</p>
-            <p className="mt-1 text-sm text-slate-300">{shortenAddress(state.trust.wallet)}</p>
-          </div>
-          <span className={`rounded-full border px-3 py-1 text-xs font-semibold ${decisionClass(state.trust.decision)}`}>
-            {state.trust.decision}
-          </span>
-        </div>
-        <dl className="mt-4 grid grid-cols-2 gap-3 text-sm">
-          <div>
-            <dt className="text-slate-500">Trust Score</dt>
-            <dd className="mt-1 text-white">{state.trust.trustScore ?? "Not available"}</dd>
-          </div>
-          <div>
-            <dt className="text-slate-500">Risk Score</dt>
-            <dd className="mt-1 text-white">{state.trust.riskScore ?? "Not available"}</dd>
-          </div>
-          <div className="col-span-2">
-            <dt className="text-slate-500">Estimated Humanity</dt>
-            <dd className="mt-1 text-white">{formatEstimatedHumanity(state.trust)}</dd>
-          </div>
-        </dl>
+        {renderTrustSummary(state.trust)}
         {state.txHash ? (
           <a
             href={getExplorerTxUrl(state.txHash)}

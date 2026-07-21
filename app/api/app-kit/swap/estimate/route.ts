@@ -2,8 +2,9 @@ import { NextResponse } from "next/server";
 import {
   estimateProtectedSwap,
   getAppKitSwapConfigStatus,
-  getReadableAppKitError,
+  getPublicAppKitError,
   getServerWalletBalances,
+  logAppKitSwapError,
   type AppKitSwapRequest,
   validateSwapRequest
 } from "@/lib/server/appKitSwap";
@@ -12,18 +13,30 @@ export const runtime = "nodejs";
 
 export async function GET() {
   const config = getAppKitSwapConfigStatus();
+  const publicConfig = {
+    ok: config.ok,
+    testnetOnly: config.testnetOnly,
+    chain: config.chain,
+    serverWalletAddress: config.serverWalletAddress
+  };
+
   if (!config.ok) {
-    return NextResponse.json({ ...config, balances: null });
+    return NextResponse.json({
+      ...publicConfig,
+      balances: null,
+      balanceError: "Protected Swap server wallet is not configured."
+    });
   }
 
   try {
     const balances = await getServerWalletBalances();
-    return NextResponse.json({ ...config, balances });
+    return NextResponse.json({ ...publicConfig, balances });
   } catch (error) {
+    logAppKitSwapError("balance refresh failed", error);
     return NextResponse.json({
-      ...config,
+      ...publicConfig,
       balances: null,
-      balanceError: getReadableAppKitError(error)
+      balanceError: getPublicAppKitError(error)
     });
   }
 }
@@ -58,14 +71,14 @@ export async function POST(request: Request) {
       tokenIn: parsed.tokenIn,
       tokenOut: parsed.tokenOut
     });
-    return NextResponse.json({ ok: true, ...result, config: getAppKitSwapConfigStatus() });
+    return NextResponse.json({ ok: true, ...result });
   } catch (error) {
+    logAppKitSwapError("estimate failed", error);
     return NextResponse.json(
       {
         ok: false,
         error: "APP_KIT_SWAP_ESTIMATE_FAILED",
-        message: getReadableAppKitError(error),
-        config: getAppKitSwapConfigStatus()
+        message: getPublicAppKitError(error)
       },
       { status: 502 }
     );

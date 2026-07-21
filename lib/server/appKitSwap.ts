@@ -19,6 +19,14 @@ export type AppKitSwapRequest = {
   chain?: string;
 };
 
+type ServerWalletBalanceState = {
+  wallet: `0x${string}`;
+  nativeBalance: string;
+  USDC: string;
+  EURC: string;
+  raw: { nativeBalance: bigint; USDC: bigint; EURC: bigint };
+};
+
 const kit = new AppKit();
 const arcPublicClient = createPublicClient({
   chain: {
@@ -32,6 +40,12 @@ const arcPublicClient = createPublicClient({
   },
   transport: http(ArcTestnet.rpcEndpoints[0])
 });
+const balanceCacheTtlMs = 30_000;
+let lastServerWalletBalanceState: { value: ServerWalletBalanceState; cachedAt: number } | null = null;
+
+function sleep(ms: number) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
 
 function isConfiguredSecret(value: string | undefined): value is string {
   if (!value) return false;
@@ -149,13 +163,26 @@ async function getErc20Balance(tokenAddress: `0x${string}`, wallet: `0x${string}
   });
 }
 
-async function getServerWalletBalanceState() {
+async function withRpcRetry<T>(operation: () => Promise<T>): Promise<T> {
+  let lastError: unknown;
+
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    try {
+      return await operation();
+    } catch (error) {
+      lastError = error;
+      if (attempt < 2) await sleep(350 * (attempt + 1));
+    }
+  }
+
+  throw lastError;
+}
+
+async function readFreshServerWalletBalanceState(): Promise<ServerWalletBalanceState> {
   const { account } = getServerAdapter();
-  const [nativeBalance, usdcBalance, eurcBalance] = await Promise.all([
-    arcPublicClient.getBalance({ address: account.address }),
-    getErc20Balance(tokenConfig.USDC.address, account.address),
-    getErc20Balance(tokenConfig.EURC.address, account.address)
-  ]);
+  const nativeBalance = await withRpcRetry(() => arcPublicClient.getBalance({ address: account.address }));
+  const usdcBalance = await withRpcRetry(() => getErc20Balance(tokenConfig.USDC.address, account.address));
+  const eurcBalance = await withRpcRetry(() => getErc20Balance(tokenConfig.EURC.address, account.address));
 
   return {
     wallet: account.address,
@@ -166,8 +193,30 @@ async function getServerWalletBalanceState() {
   };
 }
 
+async function getServerWalletBalanceState(options: { allowStale?: boolean } = {}) {
+  const cacheAge = lastServerWalletBalanceState
+    ? Date.now() - lastServerWalletBalanceState.cachedAt
+    : Number.POSITIVE_INFINITY;
+
+  if (lastServerWalletBalanceState && cacheAge <= balanceCacheTtlMs) {
+    return lastServerWalletBalanceState.value;
+  }
+
+  try {
+    const fresh = await readFreshServerWalletBalanceState();
+    lastServerWalletBalanceState = { value: fresh, cachedAt: Date.now() };
+    return fresh;
+  } catch (error) {
+    if (options.allowStale && lastServerWalletBalanceState) {
+      console.warn("[KX App Kit Swap] using stale server wallet balance after RPC error", error);
+      return lastServerWalletBalanceState.value;
+    }
+    throw error;
+  }
+}
+
 export async function getServerWalletBalances() {
-  const balances = await getServerWalletBalanceState();
+  const balances = await getServerWalletBalanceState({ allowStale: true });
   return {
     wallet: balances.wallet,
     nativeBalance: balances.nativeBalance,
@@ -268,4 +317,42 @@ export function getReadableAppKitError(error: unknown) {
   if (error instanceof Error) return error.message;
   if (typeof error === "string") return error;
   return "Circle App Kit swap operation failed.";
+}
+
+export function logAppKitSwapError(context: string, error: unknown) {
+  console.error(`[KX App Kit Swap] ${context}`, error);
+}
+
+export function getPublicAppKitError(error: unknown) {
+  const message = getReadableAppKitError(error);
+  const lower = message.toLowerCase();
+
+  const balanceMatch = message.match(/Required\s+([0-9.,]+)\s+([A-Z]+),\s+available\s+([0-9.,]+)\s+([A-Z]+)/i);
+  if (lower.includes("insufficient") && balanceMatch) {
+    const requiredAmount = balanceMatch[1];
+    const token = balanceMatch[2];
+    const availableAmount = balanceMatch[3];
+    return `Insufficient ${token} balance. This wallet has ${availableAmount} ${token} available, but ${requiredAmount} ${token} is required.`;
+  }
+
+  if (lower.includes("request limit") || lower.includes("rate limit")) {
+    return "Arc Testnet balance data is temporarily rate limited. Try refreshing in a moment.";
+  }
+  if (lower.includes("rpc") || lower.includes("eth_call") || lower.includes("readcontract") || lower.includes("balanceof")) {
+    return "Server wallet balances are temporarily unavailable. Try refreshing in a moment.";
+  }
+  if (lower.includes("not configured") || lower.includes("kit_key") || lower.includes("private key")) {
+    return "Protected Swap server wallet is not configured.";
+  }
+  if (lower.includes("liquidity") || lower.includes("route") || lower.includes("quote")) {
+    return "No swap route is available for this pair and amount.";
+  }
+  if (lower.includes("slippage")) {
+    return "The swap moved outside the configured slippage tolerance.";
+  }
+  if (lower.includes("network") || lower.includes("provider") || lower.includes("fetch") || lower.includes("timeout")) {
+    return "The swap provider is temporarily unavailable. Try again in a moment.";
+  }
+
+  return "Protected Swap is temporarily unavailable. Try again in a moment.";
 }

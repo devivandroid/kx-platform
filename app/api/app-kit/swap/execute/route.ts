@@ -1,8 +1,8 @@
 import { NextResponse } from "next/server";
 import {
   executeProtectedSwap,
-  getAppKitSwapConfigStatus,
-  getReadableAppKitError,
+  getPublicAppKitError,
+  logAppKitSwapError,
   type AppKitSwapRequest,
   validateSwapRequest
 } from "@/lib/server/appKitSwap";
@@ -39,14 +39,14 @@ export async function POST(request: Request) {
       tokenIn: parsed.tokenIn,
       tokenOut: parsed.tokenOut
     });
-    return NextResponse.json({ ok: true, ...result, config: getAppKitSwapConfigStatus() });
+    return NextResponse.json({ ok: true, ...result });
   } catch (error) {
+    logAppKitSwapError("execution failed", error);
     return NextResponse.json(
       {
         ok: false,
         error: "APP_KIT_SWAP_EXECUTION_FAILED",
-        message: getReadableAppKitError(error),
-        config: getAppKitSwapConfigStatus()
+        message: getPublicAppKitError(error)
       },
       { status: 502 }
     );

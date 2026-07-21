@@ -185,6 +185,33 @@ async function getTransferLogs(
   return { sent, received };
 }
 
+function getLatestSampleBlock(sample: ArcscanWalletTransactionSample[]): number {
+  return sample.reduce((latest, item) => Math.max(latest, item.blockNumber ?? 0), 0);
+}
+
+function getLatestSampleTimestamp(sample: ArcscanWalletTransactionSample[]): string | null {
+  const latest = sample
+    .map((item) => Date.parse(item.timestamp))
+    .filter((timestamp) => Number.isFinite(timestamp))
+    .sort((a, b) => b - a)[0];
+
+  return latest === undefined ? null : new Date(latest).toISOString();
+}
+
+function getSampleCounterparties(wallet: string, sample: ArcscanWalletTransactionSample[]): number {
+  const normalizedWallet = wallet.toLowerCase();
+  const counterparties = new Set<string>();
+
+  for (const item of sample) {
+    const from = item.from?.toLowerCase() ?? null;
+    const to = item.to?.toLowerCase() ?? null;
+    const counterparty = from === normalizedWallet ? to : to === normalizedWallet ? from : null;
+    if (counterparty) counterparties.add(counterparty);
+  }
+
+  return counterparties.size;
+}
+
 export async function indexArcNetworkSnapshot(
   wallet: string,
   options: ArcNetworkIndexOptions = {}
@@ -198,16 +225,41 @@ export async function indexArcNetworkSnapshot(
   if (cached) return cached;
 
   const provider = new JsonRpcProvider(rpcUrl, ARC_TESTNET_CHAIN_ID);
-  const [latestBlock, balance, accountCode, arcscanStats, arcscanTransactionSample] = await Promise.all([
-    provider.getBlockNumber(),
-    provider.getBalance(normalizedWallet),
-    provider.getCode(normalizedWallet),
+  const [arcscanStats, arcscanTransactionSample] = await Promise.all([
     getArcscanAddressStats(normalizedWallet),
     getArcscanWalletTransactionSample(normalizedWallet, 50)
   ]);
+
+  let latestBlock = getLatestSampleBlock(arcscanTransactionSample);
+  let balance = 0n;
+  let accountCode: string | undefined;
+
+  try {
+    const [rpcLatestBlock, rpcBalance, rpcAccountCode] = await Promise.all([
+      provider.getBlockNumber(),
+      provider.getBalance(normalizedWallet),
+      provider.getCode(normalizedWallet)
+    ]);
+    latestBlock = rpcLatestBlock;
+    balance = rpcBalance;
+    accountCode = rpcAccountCode;
+  } catch (error) {
+    console.warn("[KX Arc Network] RPC account summary unavailable; using Arcscan indexed data when available.", error);
+  }
+
   const fromBlock = Math.max(0, latestBlock - Math.max(1, defaultBlockWindow));
   const walletTopic = getPaddedAddressTopic(normalizedWallet);
-  const { sent, received } = await getTransferLogs(provider, walletTopic, fromBlock, latestBlock);
+  let sent: Log[] = [];
+  let received: Log[] = [];
+
+  if (latestBlock > 0) {
+    try {
+      ({ sent, received } = await getTransferLogs(provider, walletTopic, fromBlock, latestBlock));
+    } catch (error) {
+      console.warn("[KX Arc Network] RPC transfer log indexing unavailable; using Arcscan counters when available.", error);
+    }
+  }
+
   const txHashes = new Set<string>();
   const outgoingTxHashes = new Set<string>();
   const counterparties = new Set<string>();
@@ -231,34 +283,46 @@ export async function indexArcNetworkSnapshot(
   }
 
   let outgoingGasUsed = 0n;
-  await Promise.all(
-    [...outgoingTxHashes].map(async (txHash) => {
-      const receipt = await provider.getTransactionReceipt(txHash);
-      outgoingGasUsed += receipt?.gasUsed ?? 0n;
-    })
-  );
+  try {
+    await Promise.all(
+      [...outgoingTxHashes].map(async (txHash) => {
+        const receipt = await provider.getTransactionReceipt(txHash);
+        outgoingGasUsed += receipt?.gasUsed ?? 0n;
+      })
+    );
+  } catch (error) {
+    console.warn("[KX Arc Network] RPC receipt lookup unavailable; using Arcscan gas counters when available.", error);
+  }
 
-  const lastBlock = lastTransferBlock === null ? null : await provider.getBlock(lastTransferBlock);
+  let lastBlockTimestamp: number | null = null;
+  if (lastTransferBlock !== null) {
+    try {
+      lastBlockTimestamp = (await provider.getBlock(lastTransferBlock))?.timestamp ?? null;
+    } catch {
+      lastBlockTimestamp = null;
+    }
+  }
+
+  const sampleCounterparties = getSampleCounterparties(normalizedWallet, arcscanTransactionSample);
+  const sampleLastActivity = getLatestSampleTimestamp(arcscanTransactionSample);
   const snapshot: ArcNetworkSnapshot = {
     wallet: normalizedWallet,
-    nativeBalanceUSDC: Number(formatUnits(balance, nativeRpcDecimals)).toFixed(6),
+    nativeBalanceUSDC: arcscanStats?.nativeBalanceUSDC ?? Number(formatUnits(balance, nativeRpcDecimals)).toFixed(6),
     usdcTransfers: sent.length + received.length,
     usdcTransferTransactions: txHashes.size,
     usdcVolumeSent: formatUSDC(sentValue),
     usdcVolumeReceived: formatUSDC(receivedValue),
     usdcVolumeTotal: formatUSDC(sentValue + receivedValue),
-    uniqueCounterparties: counterparties.size,
-    outgoingGasUsed: outgoingGasUsed.toString(),
-    lastTransferAt: lastBlock?.timestamp
-      ? new Date(lastBlock.timestamp * 1000).toISOString()
-      : null,
-    lastTransferBlock,
+    uniqueCounterparties: Math.max(counterparties.size, sampleCounterparties),
+    outgoingGasUsed: outgoingGasUsed > 0n ? outgoingGasUsed.toString() : String(arcscanStats?.gasUsed ?? "0"),
+    lastTransferAt: lastBlockTimestamp ? new Date(lastBlockTimestamp * 1000).toISOString() : sampleLastActivity,
+    lastTransferBlock: lastTransferBlock ?? (getLatestSampleBlock(arcscanTransactionSample) || null),
     fromBlock,
     toBlock: latestBlock,
     indexedAt: new Date().toISOString(),
     cacheSource: "live_index",
     accountCode,
-    isContractAccount: accountCode !== "0x",
+    isContractAccount: accountCode === undefined ? undefined : accountCode !== "0x",
     arcscanStats,
     arcscanTransactionSample
   };
